@@ -16,3 +16,5 @@ then it comes the "Ask"
 # Future
 when we succussfully built a intelligent system  that can learn the skills and apply them, how it can become a sicentist?
 how it can achieve to create something like markov chains?
+
+---
