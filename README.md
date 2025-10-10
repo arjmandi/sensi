@@ -8,6 +8,10 @@ Sensi starts by sensing, which is reading (in future, seeing and listening)
 But how can a bot see the world through reading?
 What is something that can translate a text into a model? Embedding?
 
+imagineing how something works, hypothesize, 
+
+How much give wight to memory, how much to new data? a good start is to keep it like ax+b , and b as the bias from memory.
+
 
 to solve arc agi maybe it needs to learn rotation, colors, etc.. what skills does it need to learn?
 
@@ -16,5 +20,7 @@ then it comes the "Ask"
 # Future
 when we succussfully built a intelligent system  that can learn the skills and apply them, how it can become a sicentist?
 how it can achieve to create something like markov chains?
+
+For hard problems, you need a clear mind and pure intention to solve them.
 
 ---
