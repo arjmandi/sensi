@@ -48,7 +48,10 @@ another abstraction is something like below, a separation of type of models for 
 	•	Uncertainty: SDEs, Bayesian posteriors over \theta, ensemble runs.
 	•	Control: design i(t) by optimal control/MPC atop the DE model.
 
+up to now, 3 options, transformers, rnn, ann itself (a neuron as a model)
+what are our limitations when we talk about a model? how small or big it can be?
 
+so if we're at this point, let's say the llm itself is the model.
 
 # How Sensi works
 1. learn to build a model
