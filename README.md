@@ -40,6 +40,15 @@ a simple task is one models
 a complex task is multiple models
 how a smart person can quickly search if there's a path with learned things to a model?
 
+my current hypothesis is that different models will lead to different kind of intelligence.
+another abstraction is something like below, a separation of type of models for different usecases:
+	•	White-box: choose f,h from physics; estimate \theta by least squares/maximum likelihood on o(t) (sensitivity/adjoint).
+	•	Grey-box: part physics, part learned f_\theta (e.g., neural ODE term); train with simulation-in-the-loop.
+	•	Black-box: neural ODE / operator learner with regularization to encode invariances (energy, symmetries).
+	•	Uncertainty: SDEs, Bayesian posteriors over \theta, ensemble runs.
+	•	Control: design i(t) by optimal control/MPC atop the DE model.
+
+
 
 # How Sensi works
 1. learn to build a model
