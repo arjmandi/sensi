@@ -7,6 +7,9 @@ Becuase Sensi needs to verify if the provided instruction is even possible. Or m
 Sensi starts by sensing, which is reading (in future, seeing and listening)
 But how can a bot see the world through reading?
 What is something that can translate a text into a model? Embedding?
+This is important because seeing/modeling is the solution.
+
+So the question is what is the closest compressed model to what I'm seeing. yes
 
 Imagineing how something works, hypothesizing, playing, trying, -> but most importantly seeing 
 
@@ -17,12 +20,17 @@ To solve arc agi maybe it needs to learn rotation, colors, etc.. what skills doe
 
 then it comes the "Ask"
 
-when you want to turn something into a model/analogy/simplify-it it must have certian qualities. in humans it happens a lot that we try to use a model in a wrong setting. so not just model building is important but how good you are in re-use or build is important. so models must have something to them that once you look at them, either you feel you need a new one or you can use them. 
+When you want to turn something into a model/analogy/simplify-it it must have certian qualities. in humans it happens a lot that we try to use a model in a wrong setting. 
+So not just model building is important but how good you are in re-use or build is important. 
+So models must have a quality to them that once you look at them, either you feel you need a new one or you can use them. 
 
 How about a unified design that is happening in sensing through acting. like a turing machine.
 
 
+So the question is what is the closest compressed model to what I'm seeing. yes
+
 # How Sensi works
+
 
 # Goal
 Implement and test against ARC-AGI
