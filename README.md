@@ -29,8 +29,22 @@ How about a unified design that is happening in sensing through acting. like a t
 
 So the question is what is the closest compressed model to what I'm seeing. yes
 
-# How Sensi works
+now, what is a model?
+you do i1,i2,i3,i4 ... you get o1,o2,o3, o4, ...
 
+you can compose models
+
+a simple task is one models
+a complex task is multiple models
+how a smart person can quickly search if there's a path with learned things to a model?
+
+
+# How Sensi works
+1. learn to build a model
+2. treat things with your learned models
+3. you can compose models , which builds new models
+
+100. intenisify applied models and forget loose models
 
 # Goal
 Implement and test against ARC-AGI
