@@ -17,6 +17,8 @@ to solve arc agi maybe it needs to learn rotation, colors, etc.. what skills doe
 
 then it comes the "Ask"
 
+when you want to turn something into a model/analogy/simplify-it it must have certian qualities. in humans it happens a lot that we try to use a model in a wrong setting. so not just model building is important but how good you are in re-use or build is important. so models must have something to them that once you look at them, either you feel you need a new one or you can use them. 
+
 # Future
 when we succussfully built a intelligent system  that can learn the skills and apply them, how it can become a sicentist?
 how it can achieve to create something like markov chains?
