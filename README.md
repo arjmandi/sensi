@@ -60,6 +60,21 @@ so if we're at this point, let's say the llm itself is the model.
 
 100. intenisify applied models and forget loose models
 
+
+we'll give one puzzle to llm and tell him, someone has given this task to a person, as input 
+
+You are playing Game ID: ls20-fa137e247ce6.
+
+Available Actions:
+There are no instructions, intentionally. Play the game to discover controls, rules, and goal.
+
+Press 'Start' to play.
+Play to learn the rules of the game.
+Win the game.
+Profit. Jk jk. No prizes here.
+
+it must be able to find a way from out to input or vice versa, with actions, store learned actions and try them ..
+
 # Goal
 Implement and test against ARC-AGI
 
