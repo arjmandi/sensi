@@ -31,7 +31,9 @@ So the question is what is the closest compressed model to what I'm seeing. yes
 
 now, what is a model?
 you do i1,i2,i3,i4 ... you get o1,o2,o3, o4, ...
-
+model in it's simplest form is a funciton
+:
+what is a mathematical model for this?
 you can compose models
 
 a simple task is one models
