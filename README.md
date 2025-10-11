@@ -74,6 +74,12 @@ Win the game.
 Profit. Jk jk. No prizes here.
 
 it must be able to find a way from out to input or vice versa, with actions, store learned actions and try them ..
+rewarded path = memory
+bigger win, more reward .
+pruning the previous paths that don't work is key
+we know what is a concept of a game, we need to tell this to the model, what is it to win, to lose, what is the pattern, what is the color, ..
+is it needed to teach the model what is a move? what is space, what happens when you move something?
+
 
 # Goal
 Implement and test against ARC-AGI
