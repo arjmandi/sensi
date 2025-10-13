@@ -57,7 +57,26 @@ ARC-AGI games need timely actions, so LLM must be able to act quickly.
 1. one way is to decode LLM outputs in a way that can solve the puzzle, 
 2. use another function to solve the puzzle
 
-most importantly building the model is important.
+important tasks are to be able to : we'll give one puzzle to llm and tell him, someone has given this task to a person, as input 
+
+"You are playing Game ID: ls19-fa137e247ce6.
+
+Available Actions:
+There are no instructions, intentionally. Play the game to discover controls, rules, and goal.
+
+Press 'Start' to play.
+Play to learn the rules of the game.
+Win the game.
+
+it must be able to find a way from out to input or vice versa, with actions, store learned actions and try them ..
+rewarded path = memory
+bigger win, more reward .
+pruning the previous paths that don't work is key
+we know what is a concept of a game, we need to tell this to the model, what is it to win, to lose, what is the pattern, what is the color, ..
+is it needed to teach the model what is a move? what is space, what happens when you move something?
+
+now I have some ideas, 
+we give llm hands and eyes to interact with the board, and learn the  ssss
 
 # How Sensi works
 1. learn to build a model
@@ -67,24 +86,6 @@ most importantly building the model is important.
 100. intenisify applied models and forget loose models
 
 
-we'll give one puzzle to llm and tell him, someone has given this task to a person, as input 
-
-You are playing Game ID: ls20-fa137e247ce6.
-
-Available Actions:
-There are no instructions, intentionally. Play the game to discover controls, rules, and goal.
-
-Press 'Start' to play.
-Play to learn the rules of the game.
-Win the game.
-Profit. Jk jk. No prizes here.
-
-it must be able to find a way from out to input or vice versa, with actions, store learned actions and try them ..
-rewarded path = memory
-bigger win, more reward .
-pruning the previous paths that don't work is key
-we know what is a concept of a game, we need to tell this to the model, what is it to win, to lose, what is the pattern, what is the color, ..
-is it needed to teach the model what is a move? what is space, what happens when you move something?
 
 
 # Goal
