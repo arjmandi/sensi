@@ -76,7 +76,23 @@ we know what is a concept of a game, we need to tell this to the model, what is 
 is it needed to teach the model what is a move? what is space, what happens when you move something?
 
 now I have some ideas, 
-we give llm hands and eyes to interact with the board, and learn the  ssss
+we give llm hands and eyes to interact with the board, and learn the  rules,
+but, will it work? how much we can teach them?
+
+in our research it's important to know this: for LLMs: RLHF/GRPO/PPO train the model; at inference you use the fine-tuned policy. Extra “test-time reasoning” tricks (e.g., self-consistency, tree/search, verifiers) change the action selection procedure, not the model weights.
+
+can we build a fully online model that uses llm as the model?
+so we build the "sense" with llm, then use simpler online RL to beat the game based on the sense we're receiveing form the llm. llm becomes our eye.
+
+another thing to consider:
+in general we humans should ask constantly from ourselves that "what am i solvig?" -> hypothesize a goal -> or build a model? 
+so what we're doing is to constantly 
+1. guess (hypthesize): "this is problem A where if you want to achieve o1, o2, o3, you need to do i1,i2, i3"
+2. test 
+3. go to 1 until you have the answer
+
+if the  
+
 
 # How Sensi works
 1. learn to build a model
