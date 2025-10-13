@@ -53,6 +53,12 @@ what are our limitations when we talk about a model? how small or big it can be?
 
 so if we're at this point, let's say the llm itself is the model.
 
+ARC-AGI games need timely actions, so LLM must be able to act quickly.
+1. one way is to decode LLM outputs in a way that can solve the puzzle, 
+2. use another function to solve the puzzle
+
+most importantly building the model is important.
+
 # How Sensi works
 1. learn to build a model
 2. treat things with your learned models
