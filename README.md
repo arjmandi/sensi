@@ -103,7 +103,7 @@ so what we're doing is to constantly
 if the model is llm, we need to try to understand the context and input/outputs to llm and ask it to give us the answer in our standard form (guess)
 and not only use this to solve, but also fuse what we've learned into the llm knowledge for later.
 
-
+ 
 
 # Goal
 Implement and test against ARC-AGI
@@ -114,7 +114,13 @@ how it can achieve to create something like markov chains?
 
 - Sensing can be also seeing and listenting
 
-- For hard problems, you need a clear mind and pure intention to solve them.
+- For hard problems, you need a clear mind and pure intention to solve them. 
+
+
+arc agi 3 leaderboard:
+https://three.arcprize.org/leaderboard
+
+
 
 --
 
