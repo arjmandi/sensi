@@ -91,7 +91,8 @@ so what we're doing is to constantly
 2. test 
 3. go to 1 until you have the answer
 
-if the  
+if the model is llm, we need to try to understand the context and input/outputs to llm and ask it to give us the answer in our standard form (guess)
+and not only use this to solve, but also fuse what we've learned into the llm knowledge for later.
 
 
 # How Sensi works
