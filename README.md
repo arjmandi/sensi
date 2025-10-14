@@ -130,6 +130,17 @@ https://chatgpt.com/s/t_68ee672d65408191ad16d4e8c7f6c99a
 who are sota for the list of our benchmarks: by comet
 https://www.perplexity.ai/search/who-are-sota-papers-methods-fo-IbVh_QsCTVugVsXkyGE5cw#0
 
+first list of papers i've found: 
+Prevalence of Negative Transfer in Continual RL: Analyses and a Simple Baseline (ICLR 2025)
+Continual Reinforcement Learning by Planning with Online World Models (ICML 2025)
+Knowledge Retention for Continual Model-Based Reinforcement Learning (ICML 2025)
+Fast TRAC: A Parameter-Free Optimizer for Lifelong RL (NeurIPS 2024)
+Parseval Regularization for Continual RL (NeurIPS 2024)
+
+but I want to double check with the list of the benchmarks
+
+
+
 arc agi 3 leaderboard:
 https://three.arcprize.org/leaderboard
 
