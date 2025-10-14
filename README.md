@@ -119,6 +119,15 @@ how it can achieve to create something like markov chains?
 - For hard problems, you need a clear mind and pure intention to solve them. 
 
 
+
+the sota of online and continual RL methods-> by comet
+https://www.perplexity.ai/search/find-me-the-sota-of-online-and-TagP3uWeSKKzY8TNgqGLGw#0
+
+explanation of different benchmarks:
+https://chatgpt.com/s/t_68ee672d65408191ad16d4e8c7f6c99a
+
+
+
 arc agi 3 leaderboard:
 https://three.arcprize.org/leaderboard
 
