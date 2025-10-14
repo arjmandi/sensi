@@ -91,6 +91,8 @@ so what we're doing is to constantly
 2. test 
 3. go to 1 until you have the answer
 
+one take away of today is : Most practical online continual RL methods achieving SOTA in 2024–2025 use adaptive (partial) updates or hybrid models (adaptive layer updates, regularization, or streaming Bayesian criteria), enabling plasticity without catastrophic forgetting.
+let's design something that it's fully online but freezes it's knowledge in LLM to minimize forgetting while staying competitive in plasticity
 
 
 # How Sensi works
