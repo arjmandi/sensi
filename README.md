@@ -127,6 +127,8 @@ explanation of different benchmarks:
 https://chatgpt.com/s/t_68ee672d65408191ad16d4e8c7f6c99a
 
 
+who are sota for the list of our benchmarks: by comet
+https://www.perplexity.ai/search/who-are-sota-papers-methods-fo-IbVh_QsCTVugVsXkyGE5cw#0
 
 arc agi 3 leaderboard:
 https://three.arcprize.org/leaderboard
