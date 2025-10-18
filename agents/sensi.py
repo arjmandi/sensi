@@ -2,8 +2,8 @@ import random
 import time
 from typing import Any
 
-from ..agent import Agent
-from ..structs import FrameData, GameAction, GameState
+from .agent import Agent
+from .structs import FrameData, GameAction, GameState
 
 
 class Sensi(Agent):

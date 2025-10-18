@@ -46,5 +46,6 @@ __all__ = [
     "Agent",
     "Recorder",
     "Playback",
+    "Sensi",
     "AVAILABLE_AGENTS",
 ]
