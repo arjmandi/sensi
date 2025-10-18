@@ -94,6 +94,9 @@ so what we're doing is to constantly
 one take away of today is : Most practical online continual RL methods achieving SOTA in 2024–2025 use adaptive (partial) updates or hybrid models (adaptive layer updates, regularization, or streaming Bayesian criteria), enabling plasticity without catastrophic forgetting.
 let's design something that it's fully online but freezes it's knowledge in LLM to minimize forgetting while staying competitive in plasticity
 
+I'm still not sure about my capcbility in building such a model? do I need to implement some models and then do this?..
+
+this is a change
 
 # How Sensi works
 1. learn to build a model
