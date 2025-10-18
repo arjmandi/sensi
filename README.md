@@ -96,7 +96,6 @@ let's design something that it's fully online but freezes it's knowledge in LLM 
 
 I'm still not sure about my capcbility in building such a model? do I need to implement some models and then do this?..
 
-this is a change
 
 # How Sensi works
 1. learn to build a model
@@ -108,7 +107,11 @@ this is a change
 if the model is llm, we need to try to understand the context and input/outputs to llm and ask it to give us the answer in our standard form (guess)
 and not only use this to solve, but also fuse what we've learned into the llm knowledge for later.
 
- 
+1. give the initial game status pixels to LLM
+2. tell the LLM to describe its feeling of what is the problem, what is the possible output, what are things we can do
+3. do what LLM says and get the new state 
+4. go to 1 with the new state
+
 
 # Goal
 Implement and test against ARC-AGI
