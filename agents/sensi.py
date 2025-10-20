@@ -20,7 +20,7 @@ from .tracing import trace_agent_session
 
 from .agent import Agent
 from .structs import FrameData, GameAction, GameState
-
+logger = logging.getLogger()
 
 class Sensi(Agent):
     """An agent that always selects actions at random."""
@@ -88,7 +88,11 @@ class Sensi(Agent):
         #             f"{self.game_id} - {action.name}: count {self.action_counter}, score {frame.score}, avg fps {self.fps})"
         #         )
         #     self.action_counter += 1
+        
+        print("------------iiiiiiiiiiii--------------------------")
         print(self.frames[-1])
+        print("------------iiiiiiiiiiii--------------------------")
+        
         self.cleanup()
 
     @property
@@ -114,17 +118,13 @@ class Sensi(Agent):
     def is_playback(self) -> bool:
         return type(self) is Playback
 
-    @property
-    def name(self) -> str:
-        n = self.__class__.__name__.lower()
-        return f"{self.game_id}.{n}"
 
-    def start_recording(self) -> None:
-        filename = self.agent_name if self.is_playback else None
-        self.recorder = Recorder(prefix=self.name, filename=filename)
-        logger.info(
-            f"created new recording for {self.name} into {self.recorder.filename}"
-        )
+    # def start_recording(self) -> None:
+    #     filename = self.agent_name if self.is_playback else None
+    #     self.recorder = Recorder(prefix=self.name, filename=filename)
+    #     logger.info(
+    #         f"created new recording for {self.name} into {self.recorder.filename}"
+    #     )
 
     def append_frame(self, frame: FrameData) -> None:
         self.frames.append(frame)
@@ -133,26 +133,26 @@ class Sensi(Agent):
         if hasattr(self, "recorder") and not self.is_playback:
             self.recorder.record(json.loads(frame.model_dump_json()))
 
-    def do_action_request(self, action: GameAction) -> Response:
-        data = action.action_data.model_dump()
-        if action == GameAction.RESET:
-            data["card_id"] = self.card_id
-        if self.guid:
-            data["guid"] = self.guid
-        if action.reasoning:
-            data["reasoning"] = action.reasoning
-        if self.game_id:
-            data["game_id"] = self.game_id
-
-        json_str = json.dumps(data)
-        r = self._session.post(
-            f"{self.ROOT_URL}/api/cmd/{action.name}",
-            json=json.loads(json_str),
-            headers=self.headers,
-        )
-        if "error" in r.json():
-            logger.warning(f"Exception during action request: {r.json()}")
-        return r
+    # def do_action_request(self, action: GameAction) -> Response:
+    #     data = action.action_data.model_dump()
+    #     if action == GameAction.RESET:
+    #         data["card_id"] = self.card_id
+    #     if self.guid:
+    #         data["guid"] = self.guid
+    #     if action.reasoning:
+    #         data["reasoning"] = action.reasoning
+    #     if self.game_id:
+    #         data["game_id"] = self.game_id
+    #
+    #     json_str = json.dumps(data)
+    #     r = self._session.post(
+    #         f"{self.ROOT_URL}/api/cmd/{action.name}",
+    #         json=json.loads(json_str),
+    #         headers=self.headers,
+    #     )
+    #     if "error" in r.json():
+    #         logger.warning(f"Exception during action request: {r.json()}")
+    #     return r
 
     def take_action(self, action: GameAction) -> Optional[FrameData]:
         """Submits the specific action and gets the next frame."""
@@ -211,7 +211,7 @@ class Sensi(Agent):
         return null
 
 
-    class Playback(Agent):
+class Playback(Agent):
 
     MAX_ACTIONS = 1000000
     PLAYBACK_FPS = 5

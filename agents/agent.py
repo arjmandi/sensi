@@ -79,6 +79,11 @@ class Agent(ABC):
             not self.is_done(self.frames, self.frames[-1])
             and self.action_counter <= self.MAX_ACTIONS
         ):
+            
+            print("------------iiiiiiiiiiii--------------------------")
+            print(self.frames[-1])
+            print("------------iiiiiiiiiiii--------------------------")
+        
             action = self.choose_action(self.frames, self.frames[-1])
             if frame := self.take_action(action):
                 self.append_frame(frame)
