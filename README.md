@@ -112,6 +112,7 @@ and not only use this to solve, but also fuse what we've learned into the llm kn
 3. do what LLM says and get the new state 
 4. go to 1 with the new state
 
+- maybe I need to use sampling methods instead of thinking for timed games
 
 # Goal
 Implement and test against ARC-AGI
