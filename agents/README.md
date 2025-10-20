@@ -98,4 +98,64 @@ For all information on how to build, test, and run agents, as well as the techni
   once your API server is reachable; 2) Tail logs.log to watch
   per-action telemetry.
 
+• Agent Base Class
+
+  - agents/agent.py:45 __init__: wires up per-agent state (ids, score frames, tracing
+    tags), starts a recorder if live play, and builds a requests.Session seeded with
+    shared cookies + API headers.
+  - agents/agent.py:74 main: core loop (wrapped by trace_agent_session) that keeps
+    picking actions until is_done or MAX_ACTIONS, submitting them and logging FPS/score
+    as frames arrive, then calls cleanup.
+  - agents/agent.py:92 state: convenience property returning the latest
+    FrameData.state.
+  - agents/agent.py:96 score: convenience property returning the latest score.
+  - agents/agent.py:100 seconds: wall-clock runtime rounded to 2 decimals since the
+    loop started.
+  - agents/agent.py:104 fps: derived actions-per-second metric using action_counter and
+    elapsed time.
+
+  Agent Utilities
+
+  - agents/agent.py:111 is_playback: flag telling whether this instance is the Playback
+    subclass.
+  - agents/agent.py:115 name: builds a recording/tracing name like
+    <game_id>.<agent_class_lower>.
+  - agents/agent.py:120 start_recording: opens a Recorder; playback agents reuse the
+    filename, live agents get a new prefixed file.
+  - agents/agent.py:127 append_frame: updates local frame history, captures run GUIDs,
+    and records frames to disk when appropriate.
+  - agents/agent.py:134 do_action_request: sends the chosen action to {ROOT_URL}/api/
+    cmd/{action} with card/game/guid metadata, logging API errors returned in JSON.
+  - agents/agent.py:155 take_action: wraps do_action_request, turning the response into
+    a validated FrameData; returns None if validation fails so the loop can continue
+    safely.
+
+  Scorecard & Cleanup Hooks
+
+  - agents/agent.py:165 get_scorecard: fetches the per-game scorecard snapshot for
+    post-run recording or cleanup.
+  - agents/agent.py:177 cleanup: one-time teardown that finalizes recordings with
+    scorecard data, logs action counts/FPS, and closes the HTTP session.
+  - agents/agent.py:200 is_done: abstract—concrete agents decide when gameplay should
+    stop based on accumulated frames.
+  - agents/agent.py:205 choose_action: abstract—concrete agents pick the next
+    GameAction and populate its payload.
+
+  Playback Overrides
+
+  - agents/agent.py:214 __init__: builds a Recorder tied to the source filename, loads
+    recorded actions (guarding errors) so playback can mirror a past run.
+  - agents/agent.py:232 filter_actions: trims the recording stream down to entries
+    containing the serialized action_input packets.
+  - agents/agent.py:236 is_done: playback ends when every recorded action has been
+    replayed.
+  - agents/agent.py:240 choose_action: rehydrates the next recorded action, rebinds its
+    game_id, restores reasoning blobs, and throttles to PLAYBACK_FPS.
+  - agents/agent.py:269 append_frame: overrides base behavior to avoid double-
+    recording; still tracks frames and GUIDs.
+
+  Natural follow-ups: 1) Inspect a specific concrete agent (e.g., agents/templates/
+  random_agent.py) to see its is_done/choose_action implementations; 2) Run a playback
+  recording to observe how recorded actions drive the loop.
+
 
