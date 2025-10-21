@@ -493,7 +493,7 @@ Call exactly one action.
         )
 
 
-class GuidedLLM(LLM, Agent):
+class GuidedLLM(LLM):
     """Similar to LLM, with explicit human-provided rules in the user prompt to increase success rate."""
 
     MAX_ACTIONS = 80
