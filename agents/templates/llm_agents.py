@@ -248,8 +248,7 @@ class LLM(Agent):
         if len(self.messages) > self.MESSAGE_LIMIT:
             self.messages = self.messages[-self.MESSAGE_LIMIT :]
         if self.MODEL_REQUIRES_TOOLS:
-            # cant clip the message list between tool
-            # and tool_call else llm will error
+            # cant clip the message list between tool and tool_call else llm will error
             while (
                 self.messages[0].get("role")
                 if isinstance(self.messages[0], dict)
