@@ -13,6 +13,7 @@ from .templates.random_agent import Random
 from .templates.reasoning_agent import ReasoningAgent
 from .templates.smolagents import SmolCodingAgent, SmolVisionAgent
 from .sensi import Sensi
+from .templates.llm_agents import SensiLLM
 
 load_dotenv()
 
@@ -47,5 +48,6 @@ __all__ = [
     "Recorder",
     "Playback",
     "Sensi",
+    "SensiLLM",
     "AVAILABLE_AGENTS",
 ]

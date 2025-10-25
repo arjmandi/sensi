@@ -633,3 +633,119 @@ For example, explain the game rules, objectives, and optimal strategies.
 Call exactly one action.
         """.format()
         )
+
+
+
+
+class SensiLLM(LLM):
+    """Similar to LLM, with more senses."""
+
+    MAX_ACTIONS = 80
+    DO_OBSERVATION = True
+    MODEL = "gpt-5"
+    MODEL_REQUIRES_TOOLS = True
+    MESSAGE_LIMIT = 10
+    REASONING_EFFORT = "medium"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._last_reasoning_tokens = 0
+        self._last_response_content = ""
+        self._total_reasoning_tokens = 0
+
+    def choose_action(
+        self, frames: list[FrameData], latest_frame: FrameData
+    ) -> GameAction:
+        """Override choose_action to capture and store reasoning metadata."""
+
+        action = super().choose_action(frames, latest_frame)
+
+        # Store reasoning metadata in the action.reasoning field
+        action.reasoning = {
+            "model": self.MODEL,
+            "action_chosen": action.name,
+            "reasoning_effort": self.REASONING_EFFORT,
+            "reasoning_tokens": self._last_reasoning_tokens,
+            "total_reasoning_tokens": self._total_reasoning_tokens,
+            "game_context": {
+                "score": latest_frame.score,
+                "state": latest_frame.state.name,
+                "action_counter": self.action_counter,
+                "frame_count": len(frames),
+            },
+            "agent_type": "guided_llm",
+            "game_rules": "locksmith",
+            "response_preview": self._last_response_content[:200] + "..."
+            if len(self._last_response_content) > 200
+            else self._last_response_content,
+        }
+
+        return action
+
+    def track_tokens(self, tokens: int, message: str = "") -> None:
+        """Override to capture reasoning token information from o3 models."""
+        super().track_tokens(tokens, message)
+
+        # Store the response content for reasoning context (avoid empty or JSON strings)
+        if message and not message.startswith("{"):
+            self._last_response_content = message
+        self._last_reasoning_tokens = tokens
+        self._total_reasoning_tokens += tokens
+
+    def capture_reasoning_from_response(self, response: Any) -> None:
+        """Helper method to capture reasoning tokens from OpenAI API response.
+
+        This should be called from the parent class if we have access to the raw response.
+        For o3 models, reasoning tokens are in response.usage.completion_tokens_details.reasoning_tokens
+        """
+        if hasattr(response, "usage") and hasattr(
+            response.usage, "completion_tokens_details"
+        ):
+            if hasattr(response.usage.completion_tokens_details, "reasoning_tokens"):
+                self._last_reasoning_tokens = (
+                    response.usage.completion_tokens_details.reasoning_tokens
+                )
+                self._total_reasoning_tokens += self._last_reasoning_tokens
+                logger.debug(
+                    f"Captured {self._last_reasoning_tokens} reasoning tokens from o3 response"
+                )
+
+    def build_user_prompt(self, latest_frame: FrameData) -> str:
+        return textwrap.dedent(
+            """
+# CONTEXT:
+You are an agent playing a dynamic game. Your objective is to
+WIN and avoid GAME_OVER while minimizing actions.
+
+One action produces one Frame. One Frame is made of one or more sequential
+Grids. Each Grid is a matrix size INT<0,63> by INT<0,63> filled with
+INT<0,15> values.
+
+You are playing a game called LockSmith. Rules and strategy:
+* RESET: start over, ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right (ACTION5 and ACTION6 do nothing in this game)
+* you may may one action per turn
+* your goal is find and collect a matching key then touch the exit door
+* 6 levels total, score shows which level, complete all levels to win (grid row 62)
+* start each level with limited energy. you GAME_OVER if you run out (grid row 61)
+* the player is a 4x4 square: [[X,X,X,X],[0,0,0,X],[4,4,4,X],[4,4,4,X]] where X is transparent to the background
+* the grid represents a birds-eye view of the level
+* walls are made of INT<10>, you cannot move through a wall
+* walkable floor area is INT<8>
+* you can refill energy by touching energy pills (a 2x2 of INT<6>)
+* current key is shown in bottom-left of entire grid
+* the exit door is a 4x4 square with INT<11> border
+* to find a new key shape, touch the key rotator, a 4x4 square denoted by INT<9> and INT<4> in the top-left corner of the square
+* to find a new key color, touch the color rotator, a 4x4 square denoted by INT<9> and INT<2> and in the bottom-left corner of the square
+* to rotate more than once, move 1 space away from the rotator and back on
+* continue rotating the shape and color of the key until the key matches the one inside the exit door (scaled down 2X)
+* if the grid does not change after an action, you probably tried to move into a wall
+
+An example of a good strategy observation:
+The player 4x4 made of INT<4> and INT<0> is standing below a wall of INT<10>, so I cannot move up anymore and should
+move left towards the rotator with INT<11>.
+
+# TURN:
+Call exactly one action.
+        """.format()
+        )
+
