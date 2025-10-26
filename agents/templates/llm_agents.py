@@ -713,71 +713,54 @@ class SensiLLM(LLM):
         name = GameAction.ACTION5.name  # default action if LLM doesnt call one
         arguments = None
         message5 = None
+#-------------------------------------- Ask LLM what to do ---------------------------------------------
 
-        if self.MODEL_REQUIRES_TOOLS:
-            logger.info("Sending to Assistant for action...")
-            try:
-                create_kwargs = {
-                    "model": self.MODEL,
-                    "messages": self.messages,
-                    "tools": tools,
-                    "tool_choice": "required",
-                }
-                if self.REASONING_EFFORT is not None:
-                    create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-                response = client.chat.completions.create(**create_kwargs)
-            except openai.BadRequestError as e:
-                logger.info(f"Message dump: {self.messages}")
-                raise e
-            self.track_tokens(response.usage.total_tokens)
-            message5 = response.choices[0].message
-            logger.debug(f"... got response {message5}")
-            tool_call = message5.tool_calls[0]
-            self._latest_tool_call_id = tool_call.id
-            logger.debug(
-                f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
+        logger.info("Sending to Assistant for action...")
+        try:
+            create_kwargs = {
+                "model": self.MODEL,
+                "messages": self.messages,
+                "tools": tools,
+                "tool_choice": "required",
+            }
+            if self.REASONING_EFFORT is not None:
+                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
+            response = client.chat.completions.create(**create_kwargs)
+        except openai.BadRequestError as e:
+            logger.info(f"Message dump: {self.messages}")
+            raise e
+
+#-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
+        self.track_tokens(response.usage.total_tokens)
+        message5 = response.choices[0].message  #sampling the first llm response
+        logger.info(f"... got response {message5}")
+        tool_call = message5.tool_calls[0]
+        self._latest_tool_call_id = tool_call.id
+        logger.info(
+            f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
+        )
+        name = tool_call.function.name # name will be the action id, which is the function name!!?
+        arguments = tool_call.function.arguments
+
+        # sometimes the model will call multiple tools which isnt allowed - if we tell the model to only call one tool, what will it be?
+        extra_tools = message5.tool_calls[1:]
+        for tc in extra_tools:
+            logger.info(
+                "Error: assistant called more than one action, only using the first."
             )
-            name = tool_call.function.name
-            arguments = tool_call.function.arguments
+            message_extra = {
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
+            }
+            self.push_message(message_extra)
 
-            # sometimes the model will call multiple tools which isnt allowed
-            extra_tools = message5.tool_calls[1:]
-            for tc in extra_tools:
-                logger.info(
-                    "Error: assistant called more than one action, only using the first."
-                )
-                message_extra = {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
-                }
-                self.push_message(message_extra)
-        else:
-            logger.info("Sending to Assistant for action...")
-            try:
-                create_kwargs = {
-                    "model": self.MODEL,
-                    "messages": self.messages,
-                    "functions": functions,
-                    "function_call": "auto",
-                }
-                if self.REASONING_EFFORT is not None:
-                    create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-                response = client.chat.completions.create(**create_kwargs)
-            except openai.BadRequestError as e:
-                logger.info(f"Message dump: {self.messages}")
-                raise e
-            self.track_tokens(response.usage.total_tokens)
-            message5 = response.choices[0].message
-            function_call = message5.function_call
-            logger.debug(f"Assistant: {function_call.name} {function_call.arguments}")
-            name = function_call.name
-            arguments = function_call.arguments
 
         if message5:
-            self.push_message(message5)
+            self.push_message(message5) # when we push messsage 5 what happens :?
+
         action_id = name
-        if arguments:
+        if arguments: # it seems this one only triggers for complex actions
             try:
                 data = json.loads(arguments) or {}
             except Exception as e:
