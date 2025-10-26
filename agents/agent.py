@@ -81,7 +81,7 @@ class Agent(ABC):
         ):
             
             print("------------iiiiiiiiiiii--------------------------")
-            print(self.frames[-1])
+            # print(self.frames[-1])
             print("------------iiiiiiiiiiii--------------------------")
         
             action = self.choose_action(self.frames, self.frames[-1])
