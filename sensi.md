@@ -36,7 +36,7 @@ A solid pattern for a game loop where you add your own thinking:
 * Send that observation back as the **tool result** (or a new user message)—whichever your SDK expects.
 * Repeat until done.
 
-Minimal pseudo-flow:
+Minimal pseudo-flow: (not the best example! actually kinda missleading)
 ```text
 System: You are the game agent. Use the state to pick the best action.
 User: Goal = reach the key. State = {position, nearby, inventory, hazards}
