@@ -8,6 +8,7 @@ db1: In Sensi we don't want the agent to learn how many game are there. Agent al
 ~~db2: Based on db1, the timer in the game is a part of the game to be learned.~~ // there's no timer. it's energy line
 db2: in Sensi we train our model to do simple things, like actions, move, etc. it can also do api calls instead of actions
 
+if
 
 ## Design
 1. Sensi must learn what felt good to try and what didn't felt good

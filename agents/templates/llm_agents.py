@@ -694,7 +694,7 @@ class SensiLLM(LLM):
 
         # ~~let the agent comment observations before choosing action~~
         # ~~on the first turn, this will be in response to RESET action~~
-        function_name = latest_frame.action_input.id.name # action, tool, function
+        function_name = latest_frame.action_input.id.name # action, tool, function. !!?
         function_response = self.build_func_resp_prompt(latest_frame)
 
         message2 = {
