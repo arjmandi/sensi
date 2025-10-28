@@ -747,7 +747,7 @@ class SensiLLM(LLM):
 
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
-            f"""
+            """
 # CONTEXT:
 You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
 you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
