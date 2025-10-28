@@ -644,11 +644,9 @@ Call exactly one action.
 
 class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
-
     MAX_ACTIONS = 20
     DO_OBSERVATION = False
     MODEL = "gpt-5"
-    # MODEL_REQUIRES_TOOLS = True
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
 
@@ -665,20 +663,19 @@ class SensiLLM(LLM):
 
         logging.getLogger("openai").setLevel(logging.CRITICAL)
         logging.getLogger("httpx").setLevel(logging.CRITICAL)
-
         client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
-
-        if len(self.messages) == 0:
-            # have to manually trigger the first reset to kick off agent
+       
+        # have to manually trigger the first reset to kick off agent        
+        if len(self.messages) == 0: 
             user_prompt = self.build_user_prompt(latest_frame)
             message0 = {"role": "user", "content": user_prompt}
             self.push_message(message0)
-
             action = GameAction.RESET
             return action
+
         user_prompt = self.build_user_prompt(latest_frame)
-        message4 = {"role": "user", "content": user_prompt}
-        self.push_message(message4)
+        senseofgame = {"role": "user", "content": user_prompt}
+        self.push_message(senseofgame)
 
         action = GameAction.ACTION5.name  # default action if LLM doesnt call one
 
@@ -727,6 +724,8 @@ class SensiLLM(LLM):
 
         return action
 
+
+
     def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
         """
         Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
@@ -742,10 +741,14 @@ class SensiLLM(LLM):
         except KeyError:
             return None
 
+
+
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
             """
 # CONTEXT:
+You are a curious teenager who is playing a specific video game, you can't see the screen, your friend watches the screen and tells you what happened after your action.
+
 you're playing a random game, choose randomly from these acitons
 ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right ACTION5 
 
