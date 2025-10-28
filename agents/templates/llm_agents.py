@@ -3,7 +3,7 @@ import logging
 import os
 import textwrap
 from typing import Any, Optional
-
+import re
 import openai
 from openai import OpenAI as OpenAIClient
 
@@ -643,7 +643,7 @@ class SensiLLM(LLM):
     MAX_ACTIONS = 20
     DO_OBSERVATION = False
     MODEL = "gpt-5"
-    MODEL_REQUIRES_TOOLS = True
+    # MODEL_REQUIRES_TOOLS = True
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
 
@@ -674,36 +674,36 @@ class SensiLLM(LLM):
             message0 = {"role": "user", "content": user_prompt}
             self.push_message(message0)
 
-            message1 = {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "id": self._latest_tool_call_id,
-                        "type": "function",
-                        "function": {
-                            "name": GameAction.START.name,
-                            "arguments": json.dumps({}),
-                        },
-                    }
-                ],
-            }
+            # message1 = {
+            #     "role": "assistant",
+            #     "tool_calls": [
+            #         {
+            #             "id": self._latest_tool_call_id,
+            #             "type": "function",
+            #             "function": {
+            #                 "name": GameAction.START.name,
+            #                 "arguments": json.dumps({}),
+            #             },
+            #         }
+            #     ],
+            # }
 
-            self.push_message(message1)
+            # self.push_message(message1)
             action = GameAction.RESET
             return action
 
         # ~~let the agent comment observations before choosing action~~
         # ~~on the first turn, this will be in response to RESET action~~
-        function_name = latest_frame.action_input.id.name # action, tool, function. !!?
-        function_response = self.build_func_resp_prompt(latest_frame)
+        # function_name = latest_frame.action_input.id.name # action, tool, function. !!?
+        # function_response = self.build_func_resp_prompt(latest_frame)
 
-        message2 = {
-            "role": "tool",
-            "tool_call_id": self._latest_tool_call_id,
-            "content": str(function_response),
-        }   
+        # message2 = {
+        #     "role": "tool",
+        #     "tool_call_id": self._latest_tool_call_id,
+        #     "content": str(function_response),
+        # }   
 
-        self.push_message(message2)
+        # self.push_message(message2)
 
         # now ask for the next action
         user_prompt = self.build_user_prompt(latest_frame)
@@ -720,8 +720,8 @@ class SensiLLM(LLM):
             create_kwargs = {
                 "model": self.MODEL,
                 "messages": self.messages,
-                "tools": tools,
-                "tool_choice": "required",
+                # "tools": tools,
+                # "tool_choice": "required",
             }
             if self.REASONING_EFFORT is not None:
                 create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
@@ -732,45 +732,51 @@ class SensiLLM(LLM):
 
 #-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
         self.track_tokens(response.usage.total_tokens)
-        message5 = response.choices[0].message  #sampling the first llm response
-        logger.info(f"... got response {message5}")
-        tool_call = message5.tool_calls[0]
-        self._latest_tool_call_id = tool_call.id
+        llmanswer = response.choices[0].message.content  #sampling the first llm response
+        # llmanswer = llmanswer.content
+        logger.info(f"... got response {llmanswer}")
+        # llmanswer = message5.tool_calls[0]
+        action = self.parse_action_from_llm_response(llmanswer)
         logger.info(
-            f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
+            f"Assistant: {action.name}"
         )
-        name = tool_call.function.name # name will be the action id, which is the function name!!?
-        arguments = tool_call.function.arguments
+        # tool_call = message5.tool_calls[0]
+        # self._latest_tool_call_id = tool_call.id
+        # logger.info(
+        #     f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
+        # )
+        # name = tool_call.function.name # name will be the action id, which is the function name!!?
+        # arguments = tool_call.function.arguments
 
         # sometimes the model will call multiple tools which isnt allowed - if we tell the model to only call one tool, what will it be?
-        extra_tools = message5.tool_calls[1:]
-        for tc in extra_tools:
-            logger.info(
-                "Error: assistant called more than one action, only using the first."
-            )
-            message_extra = {
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
-            }
-            self.push_message(message_extra)
+        # extra_tools = message5.tool_calls[1:]
+        # for tc in extra_tools:
+        #     logger.info(
+        #         "Error: assistant called more than one action, only using the first."
+        #     )
+        #     message_extra = {
+        #         "role": "tool",
+        #         "tool_call_id": tc.id,
+        #         "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
+        #     }
+        #     self.push_message(message_extra)
 
 
-        if message5:
-            self.push_message(message5) # when we push messsage 5 what happens :?
+        # if message5:
+        #     self.push_message(message5) # when we push messsage 5 what happens :?
 
-        action_id = name
-        if arguments: # it seems this one only triggers for complex actions
-            try:
-                data = json.loads(arguments) or {}
-            except Exception as e:
-                data = {}
-                logger.warning(f"JSON parsing error on LLM function response: {e}")
-        else:
-            data = {}
+        # action_id = name
+        # if arguments: # it seems this one only triggers for complex actions
+        #     try:
+        #         data = json.loads(arguments) or {}
+        #     except Exception as e:
+        #         data = {}
+        #         logger.warning(f"JSON parsing error on LLM function response: {e}")
+        # else:
+        #     data = {}
 
-        action = GameAction.from_name(action_id)
-        action.set_data(data)
+        # action = GameAction.from_name(action_id)
+        # action.set_data(data)
 
 
         # Store reasoning metadata in the action.reasoning field
@@ -795,6 +801,20 @@ class SensiLLM(LLM):
 
         return action
 
+    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
+        """
+        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
+        and returns the corresponding GameAction enum member, or None if not found.
+        """
+        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
+        if not match:
+            return None
+
+        action_name = match.group(1)
+        try:
+            return GameAction[action_name]
+        except KeyError:
+            return None
 
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
