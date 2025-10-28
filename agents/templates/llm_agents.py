@@ -272,6 +272,11 @@ class LLM(Agent):
                 "parameters": empty_params,
             },
             {
+                "name": GameAction.START.name,
+                "description": "Start a game. Must be called first when NOT_PLAYED or after GAME_OVER to play again.",
+                "parameters": empty_params,
+            },
+            {
                 "name": GameAction.ACTION1.name,
                 "description": "Send this simple input action (1, W, Up).",
                 "parameters": empty_params,
@@ -656,8 +661,6 @@ class SensiLLM(LLM):
     def choose_action(
         self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
-        # action = super().choose_action(frames, latest_frame)
-
         """Choose which action the Agent should take, fill in any arguments, and return it."""
 
         logging.getLogger("openai").setLevel(logging.CRITICAL)
@@ -665,54 +668,20 @@ class SensiLLM(LLM):
 
         client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
 
-        functions = self.build_functions()
-        tools = self.build_tools()
-
         if len(self.messages) == 0:
             # have to manually trigger the first reset to kick off agent
             user_prompt = self.build_user_prompt(latest_frame)
             message0 = {"role": "user", "content": user_prompt}
             self.push_message(message0)
 
-            # message1 = {
-            #     "role": "assistant",
-            #     "tool_calls": [
-            #         {
-            #             "id": self._latest_tool_call_id,
-            #             "type": "function",
-            #             "function": {
-            #                 "name": GameAction.START.name,
-            #                 "arguments": json.dumps({}),
-            #             },
-            #         }
-            #     ],
-            # }
-
-            # self.push_message(message1)
             action = GameAction.RESET
             return action
-
-        # ~~let the agent comment observations before choosing action~~
-        # ~~on the first turn, this will be in response to RESET action~~
-        # function_name = latest_frame.action_input.id.name # action, tool, function. !!?
-        # function_response = self.build_func_resp_prompt(latest_frame)
-
-        # message2 = {
-        #     "role": "tool",
-        #     "tool_call_id": self._latest_tool_call_id,
-        #     "content": str(function_response),
-        # }   
-
-        # self.push_message(message2)
-
-        # now ask for the next action
         user_prompt = self.build_user_prompt(latest_frame)
         message4 = {"role": "user", "content": user_prompt}
         self.push_message(message4)
 
-        name = GameAction.ACTION5.name  # default action if LLM doesnt call one
-        arguments = None
-        message5 = None
+        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
+
 #-------------------------------------- Ask LLM what to do ---------------------------------------------
 
         logger.info("Sending to Assistant for action...")
@@ -720,8 +689,6 @@ class SensiLLM(LLM):
             create_kwargs = {
                 "model": self.MODEL,
                 "messages": self.messages,
-                # "tools": tools,
-                # "tool_choice": "required",
             }
             if self.REASONING_EFFORT is not None:
                 create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
@@ -733,53 +700,12 @@ class SensiLLM(LLM):
 #-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
         self.track_tokens(response.usage.total_tokens)
         llmanswer = response.choices[0].message.content  #sampling the first llm response
-        # llmanswer = llmanswer.content
         logger.info(f"... got response {llmanswer}")
-        # llmanswer = message5.tool_calls[0]
         action = self.parse_action_from_llm_response(llmanswer)
         logger.info(
             f"Assistant: {action.name}"
         )
-        # tool_call = message5.tool_calls[0]
-        # self._latest_tool_call_id = tool_call.id
-        # logger.info(
-        #     f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
-        # )
-        # name = tool_call.function.name # name will be the action id, which is the function name!!?
-        # arguments = tool_call.function.arguments
 
-        # sometimes the model will call multiple tools which isnt allowed - if we tell the model to only call one tool, what will it be?
-        # extra_tools = message5.tool_calls[1:]
-        # for tc in extra_tools:
-        #     logger.info(
-        #         "Error: assistant called more than one action, only using the first."
-        #     )
-        #     message_extra = {
-        #         "role": "tool",
-        #         "tool_call_id": tc.id,
-        #         "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
-        #     }
-        #     self.push_message(message_extra)
-
-
-        # if message5:
-        #     self.push_message(message5) # when we push messsage 5 what happens :?
-
-        # action_id = name
-        # if arguments: # it seems this one only triggers for complex actions
-        #     try:
-        #         data = json.loads(arguments) or {}
-        #     except Exception as e:
-        #         data = {}
-        #         logger.warning(f"JSON parsing error on LLM function response: {e}")
-        # else:
-        #     data = {}
-
-        # action = GameAction.from_name(action_id)
-        # action.set_data(data)
-
-
-        # Store reasoning metadata in the action.reasoning field
         action.reasoning = {
             "model": self.MODEL,
             "action_chosen": action.name,
@@ -820,35 +746,9 @@ class SensiLLM(LLM):
         return textwrap.dedent(
             """
 # CONTEXT:
-You are an agent playing a dynamic game. Your objective is to
-WIN and avoid GAME_OVER while minimizing actions.
+you're playing a random game, choose randomly from these acitons
+ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right ACTION5 
 
-One action produces one Frame. One Frame is made of one or more sequential
-Grids. Each Grid is a matrix size INT<0,63> by INT<0,63> filled with
-INT<0,15> values.
-
-You are playing a game called LockSmith. Rules and strategy:
-* RESET: start over, ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right (ACTION5 and ACTION6 do nothing in this game)
-* you may may one action per turn
-* your goal is find and collect a matching key then touch the exit door
-* 6 levels total, score shows which level, complete all levels to win (grid row 62)
-* start each level with limited energy. you GAME_OVER if you run out (grid row 61)
-* the player is a 4x4 square: [[X,X,X,X],[0,0,0,X],[4,4,4,X],[4,4,4,X]] where X is transparent to the background
-* the grid represents a birds-eye view of the level
-* walls are made of INT<10>, you cannot move through a wall
-* walkable floor area is INT<8>
-* you can refill energy by touching energy pills (a 2x2 of INT<6>)
-* current key is shown in bottom-left of entire grid
-* the exit door is a 4x4 square with INT<11> border
-* to find a new key shape, touch the key rotator, a 4x4 square denoted by INT<9> and INT<4> in the top-left corner of the square
-* to find a new key color, touch the color rotator, a 4x4 square denoted by INT<9> and INT<2> and in the bottom-left corner of the square
-* to rotate more than once, move 1 space away from the rotator and back on
-* continue rotating the shape and color of the key until the key matches the one inside the exit door (scaled down 2X)
-* if the grid does not change after an action, you probably tried to move into a wall
-
-An example of a good strategy observation:
-The player 4x4 made of INT<4> and INT<0> is standing below a wall of INT<10>, so I cannot move up anymore and should
-move left towards the rotator with INT<11>.
 
 # TURN:
 Call exactly one action.
