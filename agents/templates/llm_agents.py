@@ -649,6 +649,9 @@ class SensiLLM(LLM):
     MODEL = "gpt-5"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
+    hypothesis = []
+    testing = []
+    theories = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -742,37 +745,9 @@ class SensiLLM(LLM):
             return None
 
 
-
-#     def build_user_prompt(self, latest_frame: FrameData) -> str:
-#         return textwrap.dedent(
-#             """
-# # CONTEXT:
-# You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
-# you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
-
-# your state:
-# {state}
-
-# Hypothesis:
-# {heypothesis}
-
-# the matrix is shown by list of arrays.
-
-
-
-
-
-# # TURN:
-# Call exactly one action.
-#         """.format(
-#                 state=self.game_state
-#                 heypothesis=self.heypothesis,
-#             )
-#         )
-
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
-            """
+            f"""
 # CONTEXT:
 You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
 you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
@@ -780,18 +755,38 @@ you can't see the actual screen. in each turn you get a print of the screen that
 # State:
 {state}
 
-# Score:
-{score}
-
-# Frame:
+# your current frame:
 {latest_frame}
 
+# what you did last time:
+{last_action}
+
+# the change it made to the board
+{dif}
+
+# you have a list of hypothesis
+{hypothesis}
+
+# you have a list of things your testing
+{testing}
+
+# you keep proven tests under theory
+{theories}
+
 # TURN:
-Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
+Based on the your last action and the diff it has created:
+1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
+2. what are your new tests. The list of tests must be enclosed in <tests> tags 
+3. what are your theories. The list of theories must be enclosed in <theories> tags
+
         """.format(
+                state=self.game_state,
                 latest_frame=self.pretty_print_3d(latest_frame.frame),
-                score=latest_frame.score,
-                state=latest_frame.state.name,
+                last_action=self.last_action,
+                dif=self.dif,
+                hypthesis=self.hypthesis,
+                testing=self.testing,
+                theories=self.theories,
             )
         )
 
