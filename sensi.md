@@ -15,6 +15,8 @@ r1: if the agent is in tool discovery, it must be able to update the description
 1. Sensi must learn what felt good to try and what didn't felt good
 2. 
 
+## Bets
+1. We bet on implementing the tool calling ourselves to have more control over the logic of what function to call. we will limit the model output with pydantic or dspy, so we can always get the output correctly. but this bet is something that we're not sure and in case of failure it's better to also try giving the model the control for tool use.
 
 
 
@@ -62,3 +64,11 @@ Key tips
 * **Multi-step calls.** If the model returns multiple tool calls, you can execute them in order and then return a single aggregated observation; or (often better) run one action → one observation → next action, to keep feedback tight.
 
 Quick check: in your game, what does a *useful* observation look like after an action (full map? local FOV? event list + reward)? 
+
+
+### A clean game-loop pattern (controller-owned)
+1. Send goal + current state summary (+ tools).
+2. Assistant returns `tool_calls` (e.g., `act({...})`).
+3. You execute the action, compute a **curated observation**, and send it back **as the tool result tied to that** `**tool_call_id**`.
+4. Repeat. If you’re on Assistants/Responses, the thread stores these steps for you; on Chat, you resend the running history. [OpenAI Platform+1](https://platform.openai.com/docs/guides/tools?utm_source=chatgpt.com)
+
