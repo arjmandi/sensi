@@ -743,18 +743,76 @@ class SensiLLM(LLM):
 
 
 
+#     def build_user_prompt(self, latest_frame: FrameData) -> str:
+#         return textwrap.dedent(
+#             """
+# # CONTEXT:
+# You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
+# you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
+
+# your state:
+# {state}
+
+# Hypothesis:
+# {heypothesis}
+
+# the matrix is shown by list of arrays.
+
+
+
+
+
+# # TURN:
+# Call exactly one action.
+#         """.format(
+#                 state=self.game_state
+#                 heypothesis=self.heypothesis,
+#             )
+#         )
+
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
             """
 # CONTEXT:
-You are a curious teenager who is playing a specific video game, you can't see the screen, your friend watches the screen and tells you what happened after your action.
+You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
+you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
 
-you're playing a random game, choose randomly from these acitons
-ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right ACTION5 
+# State:
+{state}
 
+# Score:
+{score}
+
+# Frame:
+{latest_frame}
 
 # TURN:
-Call exactly one action.
-        """.format()
+Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
+        """.format(
+                latest_frame=self.pretty_print_3d(latest_frame.frame),
+                score=latest_frame.score,
+                state=latest_frame.state.name,
+            )
+        )
+
+    def build_func_resp_prompt(self, latest_frame: FrameData) -> str:
+        return textwrap.dedent(
+            """
+# State:
+{state}
+
+# Score:
+{score}
+
+# Frame:
+{latest_frame}
+
+# TURN:
+Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
+        """.format(
+                latest_frame=self.pretty_print_3d(latest_frame.frame),
+                score=latest_frame.score,
+                state=latest_frame.state.name,
+            )
         )
 
