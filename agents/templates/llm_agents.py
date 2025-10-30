@@ -790,24 +790,154 @@ Based on the your last action and the diff it has created:
             )
         )
 
-    def build_func_resp_prompt(self, latest_frame: FrameData) -> str:
+
+
+class SensiLLMDS(LLM):
+    """Similar to LLM, with more senses."""
+    MAX_ACTIONS = 20
+    DO_OBSERVATION = False
+    MODEL = "gpt-5"
+    MESSAGE_LIMIT = 10
+    REASONING_EFFORT = "low"
+    hypothesis = []
+    testing = []
+    theories = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._last_reasoning_tokens = 0
+        self._last_response_content = ""
+        self._total_reasoning_tokens = 0
+
+    def choose_action(
+        self, frames: list[FrameData], latest_frame: FrameData
+    ) -> GameAction:
+        """Choose which action the Agent should take, fill in any arguments, and return it."""
+
+        logging.getLogger("openai").setLevel(logging.CRITICAL)
+        logging.getLogger("httpx").setLevel(logging.CRITICAL)
+        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
+       
+        # have to manually trigger the first reset to kick off agent        
+        if len(self.messages) == 0: 
+            user_prompt = self.build_user_prompt(latest_frame)
+            message0 = {"role": "user", "content": user_prompt}
+            self.push_message(message0)
+            action = GameAction.RESET
+            return action
+
+        user_prompt = self.build_user_prompt(latest_frame)
+        senseofgame = {"role": "user", "content": user_prompt}
+        self.push_message(senseofgame)
+
+        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
+
+#-------------------------------------- Ask LLM what to do ---------------------------------------------
+
+        logger.info("Sending to Assistant for action...")
+        try:
+            create_kwargs = {
+                "model": self.MODEL,
+                "messages": self.messages,
+            }
+            if self.REASONING_EFFORT is not None:
+                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
+            response = client.chat.completions.create(**create_kwargs)
+        except openai.BadRequestError as e:
+            logger.info(f"Message dump: {self.messages}")
+            raise e
+
+#-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
+        self.track_tokens(response.usage.total_tokens)
+        llmanswer = response.choices[0].message.content  #sampling the first llm response
+        logger.info(f"... got response {llmanswer}")
+        action = self.parse_action_from_llm_response(llmanswer)
+        logger.info(
+            f"Assistant: {action.name}"
+        )
+
+        action.reasoning = {
+            "model": self.MODEL,
+            "action_chosen": action.name,
+            "reasoning_effort": self.REASONING_EFFORT,
+            "reasoning_tokens": self._last_reasoning_tokens,
+            "total_reasoning_tokens": self._total_reasoning_tokens,
+            "game_context": {
+                "score": latest_frame.score,
+                "state": latest_frame.state.name,
+                "action_counter": self.action_counter,
+                "frame_count": len(frames),
+            },
+            "agent_type": "sinsi_llm",
+            "game_rules": "locksmith",
+            "response_preview": self._last_response_content[:200] + "..."
+            if len(self._last_response_content) > 200
+            else self._last_response_content,
+        }
+
+        return action
+
+
+
+    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
+        """
+        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
+        and returns the corresponding GameAction enum member, or None if not found.
+        """
+        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
+        if not match:
+            return None
+
+        action_name = match.group(1)
+        try:
+            return GameAction[action_name]
+        except KeyError:
+            return None
+
+
+    def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
             """
+# CONTEXT:
+You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
+you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
+
 # State:
 {state}
 
-# Score:
-{score}
-
-# Frame:
+# your current frame:
 {latest_frame}
 
+# what you did last time:
+{last_action}
+
+# the change it made to the board
+{dif}
+
+# you have a list of hypothesis
+{hypothesis}
+
+# you have a list of things your testing
+{testing}
+
+# you keep proven tests under theory
+{theories}
+
 # TURN:
-Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
+Based on the your last action and the diff it has created:
+1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
+2. what are your new tests. The list of tests must be enclosed in <tests> tags 
+3. what are your theories. The list of theories must be enclosed in <theories> tags
+
         """.format(
+                state=self.game_state,
                 latest_frame=self.pretty_print_3d(latest_frame.frame),
-                score=latest_frame.score,
-                state=latest_frame.state.name,
+                last_action=self.last_action,
+                dif=self.dif,
+                hypthesis=self.hypthesis,
+                testing=self.testing,
+                theories=self.theories,
             )
         )
+
 

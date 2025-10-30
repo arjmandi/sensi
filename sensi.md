@@ -17,7 +17,7 @@ r1: if the agent is in tool discovery, it must be able to update the description
 
 ## Bets
 1. We bet on implementing the tool calling ourselves to have more control over the logic of what function to call. we will limit the model output with pydantic or dspy, so we can always get the output correctly. but this bet is something that we're not sure and in case of failure it's better to also try giving the model the control for tool use.
-
+2. we bet on using DSPy to minimize the errors in retrieveing the objects from the prompts. it shouldn't for now interfere with our prompting but later we will use the optimization fro DSPy to test the performace
 
 
 ### overal design points
