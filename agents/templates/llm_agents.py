@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass
 
 import json
 import logging
 import os
 import textwrap
-from typing import Any, Optional
 import re
 import openai
 from openai import OpenAI as OpenAIClient
@@ -16,7 +14,6 @@ from openai import OpenAI as OpenAIClient
 from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
 import dspy
-from typing import List
 from pydantic import BaseModel, Field
 from dspy import Refine
 from dspy.functional import TypedPredictor
@@ -777,8 +774,8 @@ class ActionPlanner(dspy.Module):
 # Mapping helper: model → enum + payload
 # --------------------------------------------------------------------------------------
 
-# NOTE: we import at runtime to avoid circulars if your project structure differs.
-def to_game_action(choice: ActionChoice) -> Tuple[Any, Any]:
+# Map the model output into a concrete GameAction plus payload.
+def to_game_action(choice: ActionChoice) -> Tuple[GameAction, Any]:
     """
     Map ActionChoice to your (enum_member, payload) pair.
 
@@ -790,35 +787,24 @@ def to_game_action(choice: ActionChoice) -> Tuple[Any, Any]:
 
     Adjust this to your actual action classes, if you want to instantiate them here.
     """
-    # Delayed import to avoid hard dependency if this module is imported in tooling contexts.
-    from enum import Enum
-    try:
-        # Expect GameAction to be importable from your codebase. Adjust path if needed.
-        from .game_types import GameAction  # example: project-specific location
-    except Exception:
-        # Fallback: try a flat import (same dir)
-        try:
-            from game_types import GameAction  # type: ignore
-        except Exception:
-            GameAction = None  # type: ignore
-
     name = (choice.action_name or "").strip().upper()
-    if GameAction is None or not hasattr(GameAction, "__members__"):
-        raise RuntimeError(
-            "GameAction enum not found. Ensure it is importable in llm_agents.py (adjust import above)."
-        )
+    if not name:
+        raise ValueError("Model did not return an action name.")
 
-    if name not in GameAction.__members__:
-        raise ValueError(f"Model returned invalid action '{name}'. Valid: {list(GameAction.__members__.keys())}")
+    try:
+        enum_member = GameAction.from_name(name)
+    except ValueError as exc:
+        raise ValueError(
+            f"Model returned invalid action '{name}'. Valid: {[a.name for a in GameAction]}"
+        ) from exc
 
-    enum_member = GameAction.__members__[name]
+    args = dict(choice.args or {})
+    try:
+        payload = enum_member.set_data(args)
+    except Exception as exc:
+        raise ValueError(f"Invalid arguments for action '{enum_member.name}': {args}") from exc
 
-    # Payload choice: pass through args. If your engine expects specific types,
-    # create them here. Example:
-    #   if name == "ACTION6": payload = ComplexAction(**choice.args)
-    #   else: payload = SimpleAction(**choice.args)
-    payload = choice.args or {}
-
+    enum_member.reasoning = choice.rationale
     return enum_member, payload
 
 # --------------------------------------------------------------------------------------
@@ -893,9 +879,18 @@ class SensiLLMDS:
     # ---- Step 2: decide action using updated lists
     def choose_action(self, frames: List[Any], latest_frame: Any):
         # Bootstrap on first call: return RESET and seed previous frame.
-        if len(self.hypthesis) == 0:
+        if self._prev_frame_text is None:
             self._prev_frame_text = self.pretty_print_3d(latest_frame.frame)
-            return GameAction.RESET
+            reset_action = GameAction.RESET
+            payload = reset_action.set_data({})
+            reset_action.reasoning = None
+            self.last_action = reset_action.name
+            empty_update = TurnUpdate(
+                guesses=list(self.guesses),
+                tryings=list(self.tryings),
+                figured_out=list(self.figured_out),
+            )
+            return reset_action, payload, empty_update
 
         # 1) Update lists
         updated = self.compute_turn_update(latest_frame)
@@ -922,6 +917,7 @@ class SensiLLMDS:
         )
 
         enum_member, payload = to_game_action(choice)
+        self.last_action = enum_member.name
 
         # Telemetry/trace (optional): attach for your logs, not required by engine.
         self.last_reasoning = {
@@ -939,5 +935,4 @@ class SensiLLMDS:
         }
 
         # Caller can now send (enum_member, payload) to the game server.
-        # return enum_member, payload, updated
-        return enum_member
+        return enum_member, payload, updated
