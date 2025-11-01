@@ -3,10 +3,23 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
-from pydantic import BaseModel, Field
+
+import json
+import logging
+import os
+import textwrap
+from typing import Any, Optional
+import re
+import openai
+from openai import OpenAI as OpenAIClient
+
+from ..agent import Agent
+from ..structs import FrameData, GameAction, GameState
 import dspy
-from dspy.functional import TypedPredictor
+from typing import List
+from pydantic import BaseModel, Field
 from dspy import Refine
+from dspy.functional import TypedPredictor
 
 # --------------------------------------------------------------------------------------
 # Optional: Configure your LM once here (or do it in your app bootstrap)
@@ -880,16 +893,8 @@ class SensiLLMDS:
     # ---- Step 2: decide action using updated lists
     def choose_action(self, frames: List[Any], latest_frame: Any):
         # Bootstrap on first call: return RESET and seed previous frame.
-        if len(self.messages) == 0:
+        if len(self.hypthesis) == 0:
             self._prev_frame_text = self.pretty_print_3d(latest_frame.frame)
-            # Import here to avoid top-level dependency.
-            try:
-                from .game_types import GameAction
-            except Exception:
-                try:
-                    from game_types import GameAction  # type: ignore
-                except Exception:
-                    raise RuntimeError("GameAction enum not found for initial RESET. Adjust imports in llm_agents.py.")
             return GameAction.RESET
 
         # 1) Update lists
@@ -934,4 +939,5 @@ class SensiLLMDS:
         }
 
         # Caller can now send (enum_member, payload) to the game server.
-        return enum_member, payload, updated
+        # return enum_member, payload, updated
+        return enum_member
