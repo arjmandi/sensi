@@ -9,9 +9,18 @@ from openai import OpenAI as OpenAIClient
 
 from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
+import dspy
+from typing import List
+from pydantic import BaseModel, Field
+from dspy import Refine
+from dspy.functional import TypedPredictor
 
 logger = logging.getLogger()
 
+# 1) Configure model once at startup.
+dspy.settings.configure(
+    lm=dspy.LM("openai/gpt-4o-mini", cache=True)  
+)
 
 class LLM(Agent):
     """An agent that uses a base LLM model to play games."""
@@ -566,229 +575,7 @@ class GuidedLLM(LLM):
                     response.usage.completion_tokens_details.reasoning_tokens
                 )
                 self._total_reasoning_tokens += self._last_reasoning_tokens
-                logger.debug(
-                    f"Captured {self._last_reasoning_tokens} reasoning tokens from o3 response"
-                )
-
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are an agent playing a dynamic game. Your objective is to
-WIN and avoid GAME_OVER while minimizing actions.
-
-One action produces one Frame. One Frame is made of one or more sequential
-Grids. Each Grid is a matrix size INT<0,63> by INT<0,63> filled with
-INT<0,15> values.
-
-You are playing a game called LockSmith. Rules and strategy:
-* RESET: start over, ACTION1: move up, ACTION2: move down, ACTION3: move left, ACTION4: move right (ACTION5 and ACTION6 do nothing in this game)
-* you may may one action per turn
-* your goal is find and collect a matching key then touch the exit door
-* 6 levels total, score shows which level, complete all levels to win (grid row 62)
-* start each level with limited energy. you GAME_OVER if you run out (grid row 61)
-* the player is a 4x4 square: [[X,X,X,X],[0,0,0,X],[4,4,4,X],[4,4,4,X]] where X is transparent to the background
-* the grid represents a birds-eye view of the level
-* walls are made of INT<10>, you cannot move through a wall
-* walkable floor area is INT<8>
-* you can refill energy by touching energy pills (a 2x2 of INT<6>)
-* current key is shown in bottom-left of entire grid
-* the exit door is a 4x4 square with INT<11> border
-* to find a new key shape, touch the key rotator, a 4x4 square denoted by INT<9> and INT<4> in the top-left corner of the square
-* to find a new key color, touch the color rotator, a 4x4 square denoted by INT<9> and INT<2> and in the bottom-left corner of the square
-* to rotate more than once, move 1 space away from the rotator and back on
-* continue rotating the shape and color of the key until the key matches the one inside the exit door (scaled down 2X)
-* if the grid does not change after an action, you probably tried to move into a wall
-
-An example of a good strategy observation:
-The player 4x4 made of INT<4> and INT<0> is standing below a wall of INT<10>, so I cannot move up anymore and should
-move left towards the rotator with INT<11>.
-
-# TURN:
-Call exactly one action.
-        """.format()
-        )
-
-
-# Example of a custom LLM agent
-class MyCustomLLM(LLM):
-    """Template for creating your own custom LLM agent."""
-
-    MAX_ACTIONS = 80
-    MODEL = "gpt-4o-mini"
-    DO_OBSERVATION = True
-
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        """Customize this method to provide instructions to the LLM."""
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are an agent playing a dynamic game. Your objective is to
-WIN and avoid GAME_OVER while minimizing actions.
-
-One action produces one Frame. One Frame is made of one or more sequential
-Grids. Each Grid is a matrix size INT<0,63> by INT<0,63> filled with
-INT<0,15> values.
-
-# CUSTOM INSTRUCTIONS:
-Add your game instructions and strategy here.
-For example, explain the game rules, objectives, and optimal strategies.
-
-# TURN:
-Call exactly one action.
-        """.format()
-        )
-
-
-
-
-class SensiLLM(LLM):
-    """Similar to LLM, with more senses."""
-    MAX_ACTIONS = 20
-    DO_OBSERVATION = False
-    MODEL = "gpt-5"
-    MESSAGE_LIMIT = 10
-    REASONING_EFFORT = "low"
-    hypothesis = []
-    testing = []
-    theories = []
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._last_reasoning_tokens = 0
-        self._last_response_content = ""
-        self._total_reasoning_tokens = 0
-
-    def choose_action(
-        self, frames: list[FrameData], latest_frame: FrameData
-    ) -> GameAction:
-        """Choose which action the Agent should take, fill in any arguments, and return it."""
-
-        logging.getLogger("openai").setLevel(logging.CRITICAL)
-        logging.getLogger("httpx").setLevel(logging.CRITICAL)
-        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
-       
-        # have to manually trigger the first reset to kick off agent        
-        if len(self.messages) == 0: 
-            user_prompt = self.build_user_prompt(latest_frame)
-            message0 = {"role": "user", "content": user_prompt}
-            self.push_message(message0)
-            action = GameAction.RESET
-            return action
-
-        user_prompt = self.build_user_prompt(latest_frame)
-        senseofgame = {"role": "user", "content": user_prompt}
-        self.push_message(senseofgame)
-
-        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
-
-#-------------------------------------- Ask LLM what to do ---------------------------------------------
-
-        logger.info("Sending to Assistant for action...")
-        try:
-            create_kwargs = {
-                "model": self.MODEL,
-                "messages": self.messages,
-            }
-            if self.REASONING_EFFORT is not None:
-                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-            response = client.chat.completions.create(**create_kwargs)
-        except openai.BadRequestError as e:
-            logger.info(f"Message dump: {self.messages}")
-            raise e
-
-#-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
-        self.track_tokens(response.usage.total_tokens)
-        llmanswer = response.choices[0].message.content  #sampling the first llm response
-        logger.info(f"... got response {llmanswer}")
-        action = self.parse_action_from_llm_response(llmanswer)
-        logger.info(
-            f"Assistant: {action.name}"
-        )
-
-        action.reasoning = {
-            "model": self.MODEL,
-            "action_chosen": action.name,
-            "reasoning_effort": self.REASONING_EFFORT,
-            "reasoning_tokens": self._last_reasoning_tokens,
-            "total_reasoning_tokens": self._total_reasoning_tokens,
-            "game_context": {
-                "score": latest_frame.score,
-                "state": latest_frame.state.name,
-                "action_counter": self.action_counter,
-                "frame_count": len(frames),
-            },
-            "agent_type": "sinsi_llm",
-            "game_rules": "locksmith",
-            "response_preview": self._last_response_content[:200] + "..."
-            if len(self._last_response_content) > 200
-            else self._last_response_content,
-        }
-
-        return action
-
-
-
-    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
-        """
-        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
-        and returns the corresponding GameAction enum member, or None if not found.
-        """
-        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
-        if not match:
-            return None
-
-        action_name = match.group(1)
-        try:
-            return GameAction[action_name]
-        except KeyError:
-            return None
-
-
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
-you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
-
-# State:
-{state}
-
-# your current frame:
-{latest_frame}
-
-# what you did last time:
-{last_action}
-
-# the change it made to the board
-{dif}
-
-# you have a list of hypothesis
-{hypothesis}
-
-# you have a list of things your testing
-{testing}
-
-# you keep proven tests under theory
-{theories}
-
-# TURN:
-Based on the your last action and the diff it has created:
-1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
-2. what are your new tests. The list of tests must be enclosed in <tests> tags 
-3. what are your theories. The list of theories must be enclosed in <theories> tags
-
-        """.format(
-                state=self.game_state,
-                latest_frame=self.pretty_print_3d(latest_frame.frame),
-                last_action=self.last_action,
-                dif=self.dif,
-                hypthesis=self.hypthesis,
-                testing=self.testing,
-                theories=self.theories,
-            )
-        )
+  
 
 
 
@@ -799,9 +586,9 @@ class SensiLLMDS(LLM):
     MODEL = "gpt-5"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
-    hypothesis = []
-    testing = []
-    theories = []
+    guesses = []
+    tryings = []
+    figured_out = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -868,8 +655,7 @@ class SensiLLMDS(LLM):
                 "action_counter": self.action_counter,
                 "frame_count": len(frames),
             },
-            "agent_type": "sinsi_llm",
-            "game_rules": "locksmith",
+            "agent_type": "sensi_llm",
             "response_preview": self._last_response_content[:200] + "..."
             if len(self._last_response_content) > 200
             else self._last_response_content,
@@ -895,49 +681,148 @@ class SensiLLMDS(LLM):
             return None
 
 
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
-you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
 
-# State:
-{state}
 
-# your current frame:
-{latest_frame}
+# 2) Structured output we want
+class TurnUpdate(BaseModel):
+    guess: List[str] = Field(
+        default_factory=list,
+        description="Updated guesses, single concise sentence"
+    )
+    tryings: List[str] = Field(
+        default_factory=list,
+        description="guesses that we're trying"
+    )
+    works: List[str] = Field(
+        default_factory=list,
+        description="correct guesses"
+    )
 
-# what you did last time:
-{last_action}
+# 3) Define inputs + instructions in a DSPy Signature.
+class UpdateSignature(dspy.Signature):
+    """
+    You are a curious teenager playing a vintage pixel-graphics puzzle.
+    You cannot see the screen. You receive frames as arrays of color codes.
+    each time you get these:
+    1. a snapshot of the screen 
+    2. your last move
+    3. diff of last frame with current frame to see what has changed
+    
+    You have 
+    - things you guess
+    - things your trying (everytime you have one move, you can't try many guesses at the same time)
+    - things you figtured out
+    
+    your gessues: ...
+    you're tryings: ...
+    you've figured out: ....
 
-# the change it made to the board
-{dif}
 
-# you have a list of hypothesis
-{hypothesis}
+    Update your guesses, tests, and works based on last action + diff.
+    Keep items short, specific, and non-duplicated.
+    """
+    
+    # A single structured output instead of tag-parsed text
+    plan: TurnUpdate = dspy.OutputField(
+        desc="Updated lists: hypothesis, tests, theories."
+    )
 
-# you have a list of things your testing
-{testing}
+# 4) A small module that calls a TypedPredictor and adds lightweight guardrails.
 
-# you keep proven tests under theory
-{theories}
 
-# TURN:
-Based on the your last action and the diff it has created:
-1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
-2. what are your new tests. The list of tests must be enclosed in <tests> tags 
-3. what are your theories. The list of theories must be enclosed in <theories> tags
+class TurnPlanner(dspy.Module):
+    def __init__(self, max_items: int = 8):
+        super().__init__()
+        self.predict = TypedPredictor(UpdateSignature)
+        self.max_items = max_items
 
-        """.format(
-                state=self.game_state,
-                latest_frame=self.pretty_print_3d(latest_frame.frame),
-                last_action=self.last_action,
-                dif=self.dif,
-                hypthesis=self.hypthesis,
-                testing=self.testing,
-                theories=self.theories,
-            )
+        # Reward: encourage non-empty, bounded lists with trimmed strings.
+        def reward(args, pred):
+            p = pred.plan
+            if p is None: 
+                return 0.0
+            lists = [p.guesses, p.tryings, p.figured_out]
+            non_empty = all(isinstance(x, list) for x in lists)
+            lengths_ok = all(len(x) <= self.max_items for x in lists)
+            trimmed_ok = all(all(item.strip() for item in x) for x in lists)
+            return 1.0 if (non_empty and lengths_ok and trimmed_ok) else 0.0
+
+        self.refine = Refine(self.predict, N=3, threshold=1.0, reward_fn=reward)
+
+    def __call__(
+        self,
+        state: str,
+        prev_frame: str, 
+        current_frame: str,
+        prev_action: str,
+        diff: str,
+        prev_guesses: list[str] | str,
+        prev_tryings: list[str] | str,
+        prev_figured_out: list[str] | str,
+    ) -> TurnUpdate:
+        # Normalize list/str inputs to strings (Signature above expects str for prev_*).
+        def to_text(x):
+            if isinstance(x, list):
+                return "\n".join(f"- {s}" for s in x)
+            return x or ""
+
+        pred = self.refine(
+            state=state,
+            prev_frame=prev_frame,
+            current_frame=current_frame,
+            prev_action=prev_action,
+            diff=diff,
+            prev_guesses=to_text(prev_guesses),
+            prev_tryings=to_text(prev_tryings),
+            prev_figured_out=to_text(prev_figured_out),
         )
+        # pred.plan is a validated TurnUpdate instance (Pydantic).
+        plan: TurnUpdate = pred.plan
+        # Optional: ensure uniqueness and length bounds.
+        def clean(xs: List[str]) -> List[str]:
+            seen, out = set(), []
+            for s in xs:
+                s = s.strip()
+                if s and s.lower() not in seen:
+                    seen.add(s.lower())
+                    out.append(s)
+                if len(out) >= self.max_items:
+                    break
+            return out
+
+        plan.guesses = clean(plan.guesses)
+        plan.tryings = clean(plan.tryings)
+        plan.figured_out = clean(plan.figured_out)
+        return plan
+
+# 5) Replace your prompt builder with a call like this:
+def compute_turn_update(self, latest_frame) -> TurnUpdate:
+    planner = getattr(self, "_planner", None)
+    if planner is None:
+        planner = self._planner = TurnPlanner(max_items=8)
+
+    return planner(
+        state=self.game_state,
+        frame_1=self.frame_1,
+        latest_frame=self.pretty_print_3d(latest_frame.frame),
+        last_action=self.last_action,
+        diff=self.diff,  
+        prev_guesses=self.guesses,  
+        prev_tryings=self.tryings,
+        prev_figured_out=self.figured_out,
+    )
+
+# 6) (Optional) XML-ish strings for logging/compat:
+def format_plan_as_xml(plan: TurnUpdate) -> str:
+    def block(tag, items): 
+        lines = "\n".join(f"- {it}" for it in items)
+        return f"<{tag}>\n{lines}\n</{tag}>"
+    return "\n\n".join([
+        block("guesses", plan.guesses),
+        block("tryings", plan.tryings),
+        block("figured_out", plan.figured_out),
+    ])
+
+
 
 
