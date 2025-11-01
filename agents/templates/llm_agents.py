@@ -612,9 +612,9 @@ class UpdateSignature(dspy.Signature):
       (4) the diff describing what changed.
 
     You maintain three lists:
-      - guesses (beliefs to test),
-      - tryings (what you are actively testing this turn),
-      - figured_out (what has been confirmed true).
+      - guesses,
+      - tryings ,
+      - figured_out 
 
     Update your guesses/tryings/figured_out based on last action + diff.
     Keep items short, specific, and non-duplicated.
@@ -712,12 +712,14 @@ class ActionChoice(BaseModel):
 
 class ActionSignature(dspy.Signature):
     """
-    Choose a single next action to issue to the game server.
+    You are a curious teenager playing a vintage pixel-graphics puzzle.
+    You cannot see the screen; you receive frames as arrays of color codes.
+    In previous turn you've written these
+      - guesses, 
+      - tryings,
+      - figured_out 
 
-    Consider the current state, the last action and diff, and the UPDATED lists
-    (guesses/tryings/figured_out). Prefer actions that test the most informative
-    guess with minimal cost/risk. If an action needs parameters, include them in args.
-
+    based on the guesses, tryings and figured out things choose the next action.
     Output only one action.
     """
     state: str = dspy.InputField(desc="High-level game state and goals.")
@@ -812,7 +814,7 @@ def to_game_action(choice: ActionChoice) -> Tuple[Any, Any]:
 
 class SensiLLMDS:
     """
-    Replace your prior string-prompt LLM agent with a two-step DSPy flow:
+    A two-step DSPy flow:
       update (guesses/tryings/figured_out) → choose action
     """
 
