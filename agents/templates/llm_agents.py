@@ -14,7 +14,7 @@ from openai import OpenAI as OpenAIClient
 from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
 import dspy
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from dspy import Refine
 from dspy.functional import TypedPredictor
 
@@ -714,11 +714,20 @@ class TurnPlanner(dspy.Module):
 # --------------------------------------------------------------------------------------
 
 class ActionChoice(BaseModel):
-    action_name: str = Field(
-        description="One of: RESET, ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7."
-    )
+    id: GameAction
     args: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the chosen action.")
     rationale: Optional[str] = Field(default=None, description="Why this action is best.")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _coerce_game_action(cls, v: Any) -> GameAction:
+        if isinstance(v, GameAction):
+            return v
+        if isinstance(v, str):
+            return GameAction.from_name(v)
+        if isinstance(v, int):
+            return GameAction.from_id(v)
+        raise TypeError(f"Unsupported type for GameAction: {type(v)}")
 
 class ActionSignature(dspy.Signature):
     """
@@ -766,46 +775,13 @@ class ActionPlanner(dspy.Module):
             tryings=tryings,
             figured_out=figured_out,
         )
-        choice: ActionChoice = pred.choice
-        choice.action_name = (choice.action_name or "").strip().upper()
-        return choice
+        return pred.choice
 
 # --------------------------------------------------------------------------------------
 # Mapping helper: model → enum + payload
 # --------------------------------------------------------------------------------------
 
-# Map the model output into a concrete GameAction plus payload.
-def to_game_action(choice: ActionChoice) -> Tuple[GameAction, Any]:
-    """
-    Map ActionChoice to your (enum_member, payload) pair.
-
-    Returns:
-        (enum_member, payload)
-    Where:
-        enum_member is a GameAction member defined in your codebase.
-        payload is a tuple or dict you adapt to your SimpleAction/ComplexAction constructors.
-
-    Adjust this to your actual action classes, if you want to instantiate them here.
-    """
-    name = (choice.action_name or "").strip().upper()
-    if not name:
-        raise ValueError("Model did not return an action name.")
-
-    try:
-        enum_member = GameAction.from_name(name)
-    except ValueError as exc:
-        raise ValueError(
-            f"Model returned invalid action '{name}'. Valid: {[a.name for a in GameAction]}"
-        ) from exc
-
-    args = dict(choice.args or {})
-    try:
-        payload = enum_member.set_data(args)
-    except Exception as exc:
-        raise ValueError(f"Invalid arguments for action '{enum_member.name}': {args}") from exc
-
-    enum_member.reasoning = choice.rationale
-    return enum_member, payload
+# Map the model output into a concrete GameAction plus payload, inline (no helper).
 
 # --------------------------------------------------------------------------------------
 # SensiLLMDS — ties both steps into your agent loop
@@ -916,13 +892,15 @@ class SensiLLMDS:
             figured_out=updated.figured_out,
         )
 
-        enum_member, payload = to_game_action(choice)
-        self.last_action = enum_member.name
+        action = choice.id
+        payload = action.set_data(choice.args or {})
+        action.reasoning = choice.rationale
+        self.last_action = action.name
 
         # Telemetry/trace (optional): attach for your logs, not required by engine.
         self.last_reasoning = {
             "model": self.MODEL,
-            "action_chosen": getattr(enum_member, "name", str(enum_member)),
+            "action_chosen": getattr(action, "name", str(action)),
             "reasoning_effort": self.REASONING_EFFORT,
             "game_context": {
                 "score": getattr(latest_frame, "score", "NA"),
@@ -935,4 +913,4 @@ class SensiLLMDS:
         }
 
         # Caller can now send (enum_member, payload) to the game server.
-        return enum_member, payload, updated
+        return action, payload, updated
