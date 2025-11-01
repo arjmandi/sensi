@@ -1,26 +1,29 @@
-import json
-import logging
-import os
-import textwrap
-from typing import Any, Optional
-import re
-import openai
-from openai import OpenAI as OpenAIClient
 
-from ..agent import Agent
-from ..structs import FrameData, GameAction, GameState
-import dspy
-from typing import List
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 from pydantic import BaseModel, Field
-from dspy import Refine
+import dspy
 from dspy.functional import TypedPredictor
+from dspy import Refine
+
+# --------------------------------------------------------------------------------------
+# Optional: Configure your LM once here (or do it in your app bootstrap)
+# --------------------------------------------------------------------------------------
+
+def configure_llm(model: str = "openai/gpt-4o-mini") -> None:
+    try:
+        dspy.settings.configure(lm=dspy.LM(model, cache=True))
+    except Exception:
+        # In case DSPy is configured elsewhere or the model alias differs.
+        pass
+
+# Call this on import by default (safe if configured elsewhere).
+configure_llm()
 
 logger = logging.getLogger()
 
-# 1) Configure model once at startup.
-dspy.settings.configure(
-    lm=dspy.LM("openai/gpt-4o-mini", cache=True)  
-)
 
 class LLM(Agent):
     """An agent that uses a base LLM model to play games."""
@@ -579,156 +582,57 @@ class GuidedLLM(LLM):
 
 
 
-class SensiLLMDS(LLM):
-    """Similar to LLM, with more senses."""
-    MAX_ACTIONS = 20
-    DO_OBSERVATION = False
-    MODEL = "gpt-5"
-    MESSAGE_LIMIT = 10
-    REASONING_EFFORT = "low"
-    guesses = []
-    tryings = []
-    figured_out = []
+# --------------------------------------------------------------------------------------
+# Structured output for the update step
+# --------------------------------------------------------------------------------------
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._last_reasoning_tokens = 0
-        self._last_response_content = ""
-        self._total_reasoning_tokens = 0
-
-    def choose_action(
-        self, frames: list[FrameData], latest_frame: FrameData
-    ) -> GameAction:
-        """Choose which action the Agent should take, fill in any arguments, and return it."""
-
-        logging.getLogger("openai").setLevel(logging.CRITICAL)
-        logging.getLogger("httpx").setLevel(logging.CRITICAL)
-        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
-       
-        # have to manually trigger the first reset to kick off agent        
-        if len(self.messages) == 0: 
-            user_prompt = self.build_user_prompt(latest_frame)
-            message0 = {"role": "user", "content": user_prompt}
-            self.push_message(message0)
-            action = GameAction.RESET
-            return action
-
-        user_prompt = self.build_user_prompt(latest_frame)
-        senseofgame = {"role": "user", "content": user_prompt}
-        self.push_message(senseofgame)
-
-        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
-
-#-------------------------------------- Ask LLM what to do ---------------------------------------------
-
-        logger.info("Sending to Assistant for action...")
-        try:
-            create_kwargs = {
-                "model": self.MODEL,
-                "messages": self.messages,
-            }
-            if self.REASONING_EFFORT is not None:
-                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-            response = client.chat.completions.create(**create_kwargs)
-        except openai.BadRequestError as e:
-            logger.info(f"Message dump: {self.messages}")
-            raise e
-
-#-------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
-        self.track_tokens(response.usage.total_tokens)
-        llmanswer = response.choices[0].message.content  #sampling the first llm response
-        logger.info(f"... got response {llmanswer}")
-        action = self.parse_action_from_llm_response(llmanswer)
-        logger.info(
-            f"Assistant: {action.name}"
-        )
-
-        action.reasoning = {
-            "model": self.MODEL,
-            "action_chosen": action.name,
-            "reasoning_effort": self.REASONING_EFFORT,
-            "reasoning_tokens": self._last_reasoning_tokens,
-            "total_reasoning_tokens": self._total_reasoning_tokens,
-            "game_context": {
-                "score": latest_frame.score,
-                "state": latest_frame.state.name,
-                "action_counter": self.action_counter,
-                "frame_count": len(frames),
-            },
-            "agent_type": "sensi_llm",
-            "response_preview": self._last_response_content[:200] + "..."
-            if len(self._last_response_content) > 200
-            else self._last_response_content,
-        }
-
-        return action
-
-
-
-    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
-        """
-        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
-        and returns the corresponding GameAction enum member, or None if not found.
-        """
-        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
-        if not match:
-            return None
-
-        action_name = match.group(1)
-        try:
-            return GameAction[action_name]
-        except KeyError:
-            return None
-
-
-
-
-# 2) Structured output we want
 class TurnUpdate(BaseModel):
-    guess: List[str] = Field(
+    guesses: List[str] = Field(
         default_factory=list,
-        description="Updated guesses, single concise sentence"
+        description="Updated guesses, each a single concise sentence."
     )
     tryings: List[str] = Field(
         default_factory=list,
-        description="guesses that we're trying"
+        description="Concrete experiments/actions to run next, imperative voice."
     )
-    works: List[str] = Field(
+    figured_out: List[str] = Field(
         default_factory=list,
-        description="correct guesses"
+        description="Proven rules/regularities distilled from successful tryings."
     )
 
-# 3) Define inputs + instructions in a DSPy Signature.
 class UpdateSignature(dspy.Signature):
     """
     You are a curious teenager playing a vintage pixel-graphics puzzle.
-    You cannot see the screen. You receive frames as arrays of color codes.
-    each time you get these:
-    1. a snapshot of the screen 
-    2. your last move
-    3. diff of last frame with current frame to see what has changed
-    
-    You have 
-    - things you guess
-    - things your trying (everytime you have one move, you can't try many guesses at the same time)
-    - things you figtured out
-    
-    your gessues: ...
-    you're tryings: ...
-    you've figured out: ....
+    You cannot see the screen; you receive frames as arrays of color codes.
 
+    Each turn you get:
+      (1) a previous frame snapshot,
+      (2) a current frame snapshot,
+      (3) your last move,
+      (4) the diff describing what changed.
 
-    Update your guesses, tests, and works based on last action + diff.
+    You maintain three lists:
+      - guesses (beliefs to test),
+      - tryings (what you are actively testing this turn),
+      - figured_out (what has been confirmed true).
+
+    Update your guesses/tryings/figured_out based on last action + diff.
     Keep items short, specific, and non-duplicated.
     """
-    
-    # A single structured output instead of tag-parsed text
+
+    state: str = dspy.InputField(desc="High-level game state and goals.")
+    prev_frame: str = dspy.InputField(desc="Previous frame as printed grid.")
+    current_frame: str = dspy.InputField(desc="Current frame as printed grid.")
+    prev_action: str = dspy.InputField(desc="Action taken in the previous turn.")
+    diff: str = dspy.InputField(desc="Observed changes since the last action.")
+
+    prev_guesses: str = dspy.InputField(desc="Previous guesses, free text or bullets.")
+    prev_tryings: str = dspy.InputField(desc="Previous tryings, free text or bullets.")
+    prev_figured_out: str = dspy.InputField(desc="Previous figured_out, free text or bullets.")
+
     plan: TurnUpdate = dspy.OutputField(
-        desc="Updated lists: hypothesis, tests, theories."
+        desc="Updated lists: guesses, tryings, figured_out."
     )
-
-# 4) A small module that calls a TypedPredictor and adds lightweight guardrails.
-
 
 class TurnPlanner(dspy.Module):
     def __init__(self, max_items: int = 8):
@@ -736,31 +640,30 @@ class TurnPlanner(dspy.Module):
         self.predict = TypedPredictor(UpdateSignature)
         self.max_items = max_items
 
-        # Reward: encourage non-empty, bounded lists with trimmed strings.
         def reward(args, pred):
-            p = pred.plan
-            if p is None: 
+            p: TurnUpdate | None = getattr(pred, "plan", None)
+            if p is None:
                 return 0.0
             lists = [p.guesses, p.tryings, p.figured_out]
-            non_empty = all(isinstance(x, list) for x in lists)
-            lengths_ok = all(len(x) <= self.max_items for x in lists)
-            trimmed_ok = all(all(item.strip() for item in x) for x in lists)
-            return 1.0 if (non_empty and lengths_ok and trimmed_ok) else 0.0
+            types_ok = all(isinstance(x, list) for x in lists)
+            length_ok = all(len(x) <= self.max_items for x in lists)
+            non_empty_items = all(all(isinstance(it, str) and it.strip() for it in x) for x in lists)
+            return 1.0 if (types_ok and length_ok and non_empty_items) else 0.0
 
         self.refine = Refine(self.predict, N=3, threshold=1.0, reward_fn=reward)
 
     def __call__(
         self,
         state: str,
-        prev_frame: str, 
+        prev_frame: str,
         current_frame: str,
         prev_action: str,
         diff: str,
-        prev_guesses: list[str] | str,
-        prev_tryings: list[str] | str,
-        prev_figured_out: list[str] | str,
+        prev_guesses: str | List[str],
+        prev_tryings: str | List[str],
+        prev_figured_out: str | List[str],
     ) -> TurnUpdate:
-        # Normalize list/str inputs to strings (Signature above expects str for prev_*).
+        # Normalize list/str inputs to strings (Signature expects str for prev_*)
         def to_text(x):
             if isinstance(x, list):
                 return "\n".join(f"- {s}" for s in x)
@@ -776,15 +679,16 @@ class TurnPlanner(dspy.Module):
             prev_tryings=to_text(prev_tryings),
             prev_figured_out=to_text(prev_figured_out),
         )
-        # pred.plan is a validated TurnUpdate instance (Pydantic).
         plan: TurnUpdate = pred.plan
-        # Optional: ensure uniqueness and length bounds.
+
+        # Cleanup: uniqueness, trimming, and cap length
         def clean(xs: List[str]) -> List[str]:
             seen, out = set(), []
             for s in xs:
                 s = s.strip()
-                if s and s.lower() not in seen:
-                    seen.add(s.lower())
+                key = s.lower()
+                if s and key not in seen:
+                    seen.add(key)
                     out.append(s)
                 if len(out) >= self.max_items:
                     break
@@ -795,34 +699,237 @@ class TurnPlanner(dspy.Module):
         plan.figured_out = clean(plan.figured_out)
         return plan
 
-# 5) Replace your prompt builder with a call like this:
-def compute_turn_update(self, latest_frame) -> TurnUpdate:
-    planner = getattr(self, "_planner", None)
-    if planner is None:
-        planner = self._planner = TurnPlanner(max_items=8)
+# --------------------------------------------------------------------------------------
+# Action selection step
+# --------------------------------------------------------------------------------------
 
-    return planner(
-        state=self.game_state,
-        frame_1=self.frame_1,
-        latest_frame=self.pretty_print_3d(latest_frame.frame),
-        last_action=self.last_action,
-        diff=self.diff,  
-        prev_guesses=self.guesses,  
-        prev_tryings=self.tryings,
-        prev_figured_out=self.figured_out,
+class ActionChoice(BaseModel):
+    action_name: str = Field(
+        description="One of: RESET, ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, START."
     )
+    args: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the chosen action.")
+    rationale: Optional[str] = Field(default=None, description="Why this action is best.")
 
-# 6) (Optional) XML-ish strings for logging/compat:
-def format_plan_as_xml(plan: TurnUpdate) -> str:
-    def block(tag, items): 
-        lines = "\n".join(f"- {it}" for it in items)
-        return f"<{tag}>\n{lines}\n</{tag}>"
-    return "\n\n".join([
-        block("guesses", plan.guesses),
-        block("tryings", plan.tryings),
-        block("figured_out", plan.figured_out),
-    ])
+class ActionSignature(dspy.Signature):
+    """
+    Choose a single next action to issue to the game server.
 
+    Consider the current state, the last action and diff, and the UPDATED lists
+    (guesses/tryings/figured_out). Prefer actions that test the most informative
+    guess with minimal cost/risk. If an action needs parameters, include them in args.
 
+    Output only one action.
+    """
+    state: str = dspy.InputField(desc="High-level game state and goals.")
+    latest_frame: str = dspy.InputField(desc="Current frame as printed grid.")
+    last_action: str = dspy.InputField(desc="Most recent action taken.")
+    diff: str = dspy.InputField(desc="Observed changes caused by the last action.")
+    guesses: List[str] = dspy.InputField(desc="UPDATED guesses.")
+    tryings: List[str] = dspy.InputField(desc="UPDATED tryings.")
+    figured_out: List[str] = dspy.InputField(desc="UPDATED figured_out.")
 
+    choice: ActionChoice = dspy.OutputField(desc="The next action to execute.")
 
+class ActionPlanner(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict = TypedPredictor(ActionSignature)
+
+    def __call__(
+        self,
+        state: str,
+        latest_frame: str,
+        last_action: str,
+        diff: str,
+        guesses: List[str],
+        tryings: List[str],
+        figured_out: List[str],
+    ) -> ActionChoice:
+        pred = self.predict(
+            state=state,
+            latest_frame=latest_frame,
+            last_action=last_action,
+            diff=diff,
+            guesses=guesses,
+            tryings=tryings,
+            figured_out=figured_out,
+        )
+        choice: ActionChoice = pred.choice
+        choice.action_name = (choice.action_name or "").strip().upper()
+        return choice
+
+# --------------------------------------------------------------------------------------
+# Mapping helper: model → enum + payload
+# --------------------------------------------------------------------------------------
+
+# NOTE: we import at runtime to avoid circulars if your project structure differs.
+def to_game_action(choice: ActionChoice) -> Tuple[Any, Any]:
+    """
+    Map ActionChoice to your (enum_member, payload) pair.
+
+    Returns:
+        (enum_member, payload)
+    Where:
+        enum_member is a GameAction member defined in your codebase.
+        payload is a tuple or dict you adapt to your SimpleAction/ComplexAction constructors.
+
+    Adjust this to your actual action classes, if you want to instantiate them here.
+    """
+    # Delayed import to avoid hard dependency if this module is imported in tooling contexts.
+    from enum import Enum
+    try:
+        # Expect GameAction to be importable from your codebase. Adjust path if needed.
+        from .game_types import GameAction  # example: project-specific location
+    except Exception:
+        # Fallback: try a flat import (same dir)
+        try:
+            from game_types import GameAction  # type: ignore
+        except Exception:
+            GameAction = None  # type: ignore
+
+    name = (choice.action_name or "").strip().upper()
+    if GameAction is None or not hasattr(GameAction, "__members__"):
+        raise RuntimeError(
+            "GameAction enum not found. Ensure it is importable in llm_agents.py (adjust import above)."
+        )
+
+    if name not in GameAction.__members__:
+        raise ValueError(f"Model returned invalid action '{name}'. Valid: {list(GameAction.__members__.keys())}")
+
+    enum_member = GameAction.__members__[name]
+
+    # Payload choice: pass through args. If your engine expects specific types,
+    # create them here. Example:
+    #   if name == "ACTION6": payload = ComplexAction(**choice.args)
+    #   else: payload = SimpleAction(**choice.args)
+    payload = choice.args or {}
+
+    return enum_member, payload
+
+# --------------------------------------------------------------------------------------
+# SensiLLMDS — ties both steps into your agent loop
+# --------------------------------------------------------------------------------------
+
+class SensiLLMDS:
+    """
+    Replace your prior string-prompt LLM agent with a two-step DSPy flow:
+      update (guesses/tryings/figured_out) → choose action
+    """
+
+    # You can override these if your app provides them elsewhere.
+    MODEL: str = "openai/gpt-4o-mini"
+    REASONING_EFFORT: str = "medium"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # These attributes are expected/used by choose_action().
+        self.game_state: Any = kwargs.get("game_state", {})
+        self.last_action: Any = kwargs.get("last_action", "NONE")
+        self.messages: List[Any] = kwargs.get("messages", [])
+        self.action_counter: int = kwargs.get("action_counter", 0)
+
+        # Rolling lists we maintain each turn:
+        self.guesses: List[str] = kwargs.get("guesses", [])
+        self.tryings: List[str] = kwargs.get("tryings", [])
+        self.figured_out: List[str] = kwargs.get("figured_out", [])
+
+        # Helpers for frame printing and diff; override by injection if needed.
+        self.pretty_print_3d = kwargs.get("pretty_print_3d", lambda f: str(f))
+
+        # Keep a rolling textual snapshot of the last frame so UpdateSignature has prev/current.
+        self._prev_frame_text: Optional[str] = None
+
+        # Planners
+        self._planner: Optional[TurnPlanner] = None
+        self._action_planner: Optional[ActionPlanner] = None
+
+    # ---- Step 1: update lists
+    def compute_turn_update(self, latest_frame) -> TurnUpdate:
+        planner = self._planner or TurnPlanner(max_items=8)
+        self._planner = planner
+
+        current_frame_text = self.pretty_print_3d(latest_frame.frame)
+        prev_frame_text = self._prev_frame_text or "(none)"
+
+        # Basic diff synthesis, replace with your richer diff if available on latest_frame/self
+        try:
+            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
+        except Exception:
+            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
+        diff_text = f"score={getattr(latest_frame, 'score', 'NA')}, state={state_name}"
+
+        updated = planner(
+            state=str(self.game_state),
+            prev_frame=prev_frame_text,
+            current_frame=current_frame_text,
+            prev_action=str(self.last_action),
+            diff=diff_text,
+            prev_guesses=self.guesses,
+            prev_tryings=self.tryings,
+            prev_figured_out=self.figured_out,
+        )
+
+        # Persist for the next turn
+        self.guesses = updated.guesses
+        self.tryings = updated.tryings
+        self.figured_out = updated.figured_out
+        self._prev_frame_text = current_frame_text
+        return updated
+
+    # ---- Step 2: decide action using updated lists
+    def choose_action(self, frames: List[Any], latest_frame: Any):
+        # Bootstrap on first call: return RESET and seed previous frame.
+        if len(self.messages) == 0:
+            self._prev_frame_text = self.pretty_print_3d(latest_frame.frame)
+            # Import here to avoid top-level dependency.
+            try:
+                from .game_types import GameAction
+            except Exception:
+                try:
+                    from game_types import GameAction  # type: ignore
+                except Exception:
+                    raise RuntimeError("GameAction enum not found for initial RESET. Adjust imports in llm_agents.py.")
+            return GameAction.RESET
+
+        # 1) Update lists
+        updated = self.compute_turn_update(latest_frame)
+
+        # 2) Choose action
+        action_planner = self._action_planner or ActionPlanner()
+        self._action_planner = action_planner
+
+        current_frame_text = self.pretty_print_3d(latest_frame.frame)
+        try:
+            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
+        except Exception:
+            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
+        diff_text = f"score={getattr(latest_frame, 'score', 'NA')}, state={state_name}"
+
+        choice = action_planner(
+            state=str(self.game_state),
+            latest_frame=current_frame_text,
+            last_action=str(self.last_action),
+            diff=diff_text,
+            guesses=updated.guesses,
+            tryings=updated.tryings,
+            figured_out=updated.figured_out,
+        )
+
+        enum_member, payload = to_game_action(choice)
+
+        # Telemetry/trace (optional): attach for your logs, not required by engine.
+        self.last_reasoning = {
+            "model": self.MODEL,
+            "action_chosen": getattr(enum_member, "name", str(enum_member)),
+            "reasoning_effort": self.REASONING_EFFORT,
+            "game_context": {
+                "score": getattr(latest_frame, "score", "NA"),
+                "state": state_name,
+                "action_counter": self.action_counter,
+                "frame_count": len(frames),
+            },
+            "updated": updated.model_dump(),
+            "planner_choice": choice.model_dump(),
+        }
+
+        # Caller can now send (enum_member, payload) to the game server.
+        return enum_member, payload, updated
