@@ -715,7 +715,7 @@ class TurnPlanner(dspy.Module):
 
 class ActionChoice(BaseModel):
     action_name: str = Field(
-        description="One of: RESET, ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, START."
+        description="One of: RESET, ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7."
     )
     args: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the chosen action.")
     rationale: Optional[str] = Field(default=None, description="Why this action is best.")
