@@ -777,11 +777,6 @@ class ActionPlanner(dspy.Module):
         )
         return pred.choice
 
-# --------------------------------------------------------------------------------------
-# Mapping helper: model → enum + payload
-# --------------------------------------------------------------------------------------
-
-# Map the model output into a concrete GameAction plus payload, inline (no helper).
 
 # --------------------------------------------------------------------------------------
 # SensiLLMDS — ties both steps into your agent loop
