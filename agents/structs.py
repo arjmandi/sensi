@@ -128,7 +128,6 @@ class GameAction(Enum):
     ACTION5 = (5, SimpleAction)
     ACTION6 = (6, ComplexAction)
     ACTION7 = (7, SimpleAction)
-    START = (8, SimpleAction)
 
     action_type: Union[Type[SimpleAction], Type[ComplexAction]]
     action_data: Union[SimpleAction, ComplexAction]
