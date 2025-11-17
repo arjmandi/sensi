@@ -174,7 +174,7 @@ class LLM(Agent):
             name += f".{self.REASONING_EFFORT}"
         return name
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
         return any(
             [
@@ -1054,7 +1054,7 @@ class SensiLLMDSAgent(Agent):
             lines.append("")
         return "\n".join(lines)
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         return any(
             [
                 latest_frame.state is GameState.WIN,

@@ -60,7 +60,7 @@ class SmolCodingAgent(LLM, Agent):
 
         self.cleanup()
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
         return latest_frame.state is GameState.WIN
 
@@ -98,7 +98,7 @@ class SmolCodingAgent(LLM, Agent):
             )
 
             # Check if the game is won
-            if self.is_done(self.frames, self.frames[-1]):
+            if self.is_won(self.frames, self.frames[-1]):
                 return f"Action {action.name}{action_description} executed successfully! 🎉 GAME WON! The game is complete. Use the final_answer tool to end the run and report success."
             else:
                 return self.build_func_resp_prompt(self.frames[-1])
@@ -277,7 +277,7 @@ class SmolVisionAgent(LLM, Agent):
         agent.run(prompt, max_steps=self.MAX_ACTIONS, images=[initial_image])
         self.cleanup()
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
         return latest_frame.state is GameState.WIN
 
@@ -317,7 +317,7 @@ class SmolVisionAgent(LLM, Agent):
             image = self.grid_to_image(frame.frame)
 
             # Check if the game is won
-            if self.is_done(self.frames, self.frames[-1]):
+            if self.is_won(self.frames, self.frames[-1]):
                 return f"Action {action.name}{action_description} executed successfully! 🎉 GAME WON! The game is complete. Use the final_answer tool to end the run and report success."
             else:
                 # The LLM will get the new frame from this response.

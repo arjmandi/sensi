@@ -200,7 +200,7 @@ class Sensi(Agent):
             if hasattr(self, "_session"):
                 self._session.close()
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
         return false
 
@@ -246,7 +246,7 @@ class Playback(Agent):
             if "data" in a and "action_input" in a["data"]
         ]
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         return bool(self.action_counter >= len(self.recorded_actions))
 
     def choose_action(

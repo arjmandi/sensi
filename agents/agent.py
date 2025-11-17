@@ -76,7 +76,7 @@ class Agent(ABC):
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
         while (
-            not self.is_done(self.frames, self.frames[-1])
+            not self.is_won(self.frames, self.frames[-1])
             and self.action_counter <= self.MAX_ACTIONS
         ):
             
@@ -204,9 +204,9 @@ class Agent(ABC):
                 self._session.close()
 
     @abstractmethod
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
-        """Decide if the agent is done playing or not."""
-        raise NotImplementedError
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+        """Decide if game is won or not."""
+        return True if self.frames[-1].state == GameState.WIN else False
 
     @abstractmethod
     def choose_action(
@@ -252,7 +252,7 @@ class Playback(Agent):
             if "data" in a and "action_input" in a["data"]
         ]
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         return bool(self.action_counter >= len(self.recorded_actions))
 
     def choose_action(

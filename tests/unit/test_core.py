@@ -219,10 +219,10 @@ class TestRandomAgent:
         assert isinstance(action, GameAction)
 
         sample_frame.state = GameState.WIN
-        assert agent.is_done([sample_frame], sample_frame) is True
+        assert agent.is_won([sample_frame], sample_frame) is True
 
         sample_frame.state = GameState.NOT_FINISHED
-        assert agent.is_done([sample_frame], sample_frame) is False
+        assert agent.is_won([sample_frame], sample_frame) is False
 
 
 @pytest.mark.unit
@@ -275,10 +275,10 @@ class TestLangGraphRandomAgent:
         assert isinstance(action, GameAction)
 
         sample_frame.state = GameState.WIN
-        assert agent.is_done([sample_frame], sample_frame) is True
+        assert agent.is_won([sample_frame], sample_frame) is True
 
         sample_frame.state = GameState.NOT_FINISHED
-        assert agent.is_done([sample_frame], sample_frame) is False
+        assert agent.is_won([sample_frame], sample_frame) is False
 
 
 @pytest.mark.unit

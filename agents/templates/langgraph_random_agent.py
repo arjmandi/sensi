@@ -85,7 +85,7 @@ class LangGraphRandom(Agent):
 
         return workflow.compile()
 
-    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
         return any(
             [
