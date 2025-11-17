@@ -15,8 +15,7 @@ from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
 import dspy
 from pydantic import BaseModel, Field, field_validator
-from dspy import Refine
-from dspy.functional import TypedPredictor
+from dspy import Predict, Refine
 
 # --------------------------------------------------------------------------------------
 # Optional: Configure your LM once here (or do it in your app bootstrap)
@@ -588,9 +587,6 @@ class GuidedLLM(LLM):
                     response.usage.completion_tokens_details.reasoning_tokens
                 )
                 self._total_reasoning_tokens += self._last_reasoning_tokens
-  
-
-
 
 # --------------------------------------------------------------------------------------
 # Structured output for the update step
@@ -647,7 +643,7 @@ class UpdateSignature(dspy.Signature):
 class TurnPlanner(dspy.Module):
     def __init__(self, max_items: int = 8):
         super().__init__()
-        self.predict = TypedPredictor(UpdateSignature)
+        self.predict = Predict(UpdateSignature)
         self.max_items = max_items
 
         def reward(args, pred):
@@ -754,7 +750,7 @@ class ActionSignature(dspy.Signature):
 class ActionPlanner(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.predict = TypedPredictor(ActionSignature)
+        self.predict = Predict(ActionSignature)
 
     def __call__(
         self,
@@ -909,3 +905,60 @@ class SensiLLMDS:
 
         # Caller can now send (enum_member, payload) to the game server.
         return action, payload, updated
+
+
+class SensiLLMDSAgent(Agent):
+    """Agent wrapper that uses the SensiLLMDS DSPy planner."""
+
+    MAX_ACTIONS: int = 80
+    MODEL: str = "openai/gpt-4o-mini"
+    REASONING_EFFORT: str = "medium"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._planner = SensiLLMDS(
+            game_state={},
+            last_action="NONE",
+            messages=[],
+            action_counter=self.action_counter,
+            guesses=[],
+            tryings=[],
+            figured_out=[],
+            pretty_print_3d=self.pretty_print_3d,
+        )
+
+    def pretty_print_3d(self, array_3d: list[list[list[Any]]]) -> str:
+        lines: list[str] = []
+        for i, block in enumerate(array_3d):
+            lines.append(f"Grid {i}:")
+            for row in block:
+                lines.append(f"  {row}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+        return any(
+            [
+                latest_frame.state is GameState.WIN,
+                # uncomment below to only let the agent play one time
+                # latest_frame.state is GameState.GAME_OVER,
+            ]
+        )
+
+    def choose_action(
+        self, frames: list[FrameData], latest_frame: FrameData
+    ) -> GameAction:
+        # Provide basic game state context to the planner.
+        try:
+            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
+        except Exception:
+            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
+        self._planner.game_state = {
+            "score": getattr(latest_frame, "score", "NA"),
+            "state": state_name,
+        }
+        self._planner.action_counter = self.action_counter
+
+        action, _payload, _updated = self._planner.choose_action(frames, latest_frame)
+        # Planner already sets action.data and action.reasoning.
+        return action
