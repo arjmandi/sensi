@@ -703,380 +703,169 @@ class GuidedLLM(LLM):
 # Structured output for the update step
 # --------------------------------------------------------------------------------------
 
-class TurnUpdate(BaseModel):
-    guesses: List[str] = Field(
-        default_factory=list,
-        description="Updated guesses, each a single concise sentence."
-    )
-    tryings: List[str] = Field(
-        default_factory=list,
-        description="Concrete experiments/actions to run next, imperative voice."
-    )
-    figured_out: List[str] = Field(
-        default_factory=list,
-        description="Proven rules/regularities distilled from successful tryings."
-    )
-
-class UpdateSignature(dspy.Signature):
-    """
-    You are a curious teenager playing a vintage pixel-graphics puzzle.
-    You cannot see the screen; you receive frames as arrays of color codes.
-
-    Each turn you get:
-      (1) a previous frame snapshot,
-      (2) a current frame snapshot,
-      (3) your last move,
-      (4) the diff describing what changed.
-
-    You maintain three lists:
-      - guesses,
-      - tryings ,
-      - figured_out 
-
-    Update your guesses/tryings/figured_out based on last action + diff.
-    Keep items short, specific, and non-duplicated.
-    """
-
-    state: str = dspy.InputField(desc="High-level game state and goals.")
-    prev_frame: str = dspy.InputField(desc="Previous frame as printed grid.")
-    current_frame: str = dspy.InputField(desc="Current frame as printed grid.")
-    prev_action: str = dspy.InputField(desc="Action taken in the previous turn.")
-    diff: str = dspy.InputField(desc="Observed changes since the last action.")
-
-    prev_guesses: str = dspy.InputField(desc="Previous guesses, free text or bullets.")
-    prev_tryings: str = dspy.InputField(desc="Previous tryings, free text or bullets.")
-    prev_figured_out: str = dspy.InputField(desc="Previous figured_out, free text or bullets.")
-
-    plan: TurnUpdate = dspy.OutputField(
-        desc="Updated lists: guesses, tryings, figured_out."
-    )
-
-class TurnPlanner(dspy.Module):
-    def __init__(self, max_items: int = 8):
-        super().__init__()
-        self.predict = Predict(UpdateSignature)
-        self.max_items = max_items
-
-        def reward(args, pred):
-            p: TurnUpdate | None = getattr(pred, "plan", None)
-            if p is None:
-                return 0.0
-            lists = [p.guesses, p.tryings, p.figured_out]
-            types_ok = all(isinstance(x, list) for x in lists)
-            length_ok = all(len(x) <= self.max_items for x in lists)
-            non_empty_items = all(all(isinstance(it, str) and it.strip() for it in x) for x in lists)
-            return 1.0 if (types_ok and length_ok and non_empty_items) else 0.0
-
-        # Newer versions of DSPy (>=2.5.x) no longer expose `Refine`.
-        # When available, we use it; otherwise we fall back to a single
-        # `Predict` call, which still yields a valid TurnUpdate plan.
-        refine_cls = getattr(dspy, "Refine", None)
-        if refine_cls is not None:
-            self.refine = refine_cls(self.predict, N=3, threshold=1.0, reward_fn=reward)
-        else:
-            self.refine = self.predict
-
-    def __call__(
-        self,
-        state: str,
-        prev_frame: str,
-        current_frame: str,
-        prev_action: str,
-        diff: str,
-        prev_guesses: str | List[str],
-        prev_tryings: str | List[str],
-        prev_figured_out: str | List[str],
-    ) -> TurnUpdate:
-        # Normalize list/str inputs to strings (Signature expects str for prev_*)
-        def to_text(x):
-            if isinstance(x, list):
-                return "\n".join(f"- {s}" for s in x)
-            return x or ""
-
-        pred = self.refine(
-            state=state,
-            prev_frame=prev_frame,
-            current_frame=current_frame,
-            prev_action=prev_action,
-            diff=diff,
-            prev_guesses=to_text(prev_guesses),
-            prev_tryings=to_text(prev_tryings),
-            prev_figured_out=to_text(prev_figured_out),
-        )
-        plan: TurnUpdate = pred.plan
-
-        # Cleanup: uniqueness, trimming, and cap length
-        def clean(xs: List[str]) -> List[str]:
-            seen, out = set(), []
-            for s in xs:
-                s = s.strip()
-                key = s.lower()
-                if s and key not in seen:
-                    seen.add(key)
-                    out.append(s)
-                if len(out) >= self.max_items:
-                    break
-            return out
-
-        plan.guesses = clean(plan.guesses)
-        plan.tryings = clean(plan.tryings)
-        plan.figured_out = clean(plan.figured_out)
-        return plan
-
-# --------------------------------------------------------------------------------------
-# Action selection step
-# --------------------------------------------------------------------------------------
-
-class ActionChoice(BaseModel):
-    id: GameAction
-    args: Dict[str, Any] = Field(default_factory=dict, description="Optional parameters for the chosen action.")
-    rationale: Optional[str] = Field(default=None, description="Why this action is best.")
-
-    @field_validator("id", mode="before")
-    @classmethod
-    def _coerce_game_action(cls, v: Any) -> GameAction:
-        if isinstance(v, GameAction):
-            return v
-        if isinstance(v, str):
-            return GameAction.from_name(v)
-        if isinstance(v, int):
-            return GameAction.from_id(v)
-        raise TypeError(f"Unsupported type for GameAction: {type(v)}")
-
-class ActionSignature(dspy.Signature):
-    """
-    You are a curious teenager playing a vintage pixel-graphics puzzle.
-    You cannot see the screen; you receive frames as arrays of color codes.
-    In previous turn you've written these
-      - guesses, 
-      - tryings,
-      - figured_out 
-
-    based on the guesses, tryings and figured out things choose the next action.
-    Output only one action.
-    """
-    state: str = dspy.InputField(desc="High-level game state and goals.")
-    latest_frame: str = dspy.InputField(desc="Current frame as printed grid.")
-    last_action: str = dspy.InputField(desc="Most recent action taken.")
-    diff: str = dspy.InputField(desc="Observed changes caused by the last action.")
-    guesses: List[str] = dspy.InputField(desc="UPDATED guesses.")
-    tryings: List[str] = dspy.InputField(desc="UPDATED tryings.")
-    figured_out: List[str] = dspy.InputField(desc="UPDATED figured_out.")
-
-    choice: ActionChoice = dspy.OutputField(desc="The next action to execute.")
-
-class ActionPlanner(dspy.Module):
-    def __init__(self):
-        super().__init__()
-        self.predict = Predict(ActionSignature)
-
-    def __call__(
-        self,
-        state: str,
-        latest_frame: str,
-        last_action: str,
-        diff: str,
-        guesses: List[str],
-        tryings: List[str],
-        figured_out: List[str],
-    ) -> ActionChoice:
-        pred = self.predict(
-            state=state,
-            latest_frame=latest_frame,
-            last_action=last_action,
-            diff=diff,
-            guesses=guesses,
-            tryings=tryings,
-            figured_out=figured_out,
-        )
-        return pred.choice
-
-
-# --------------------------------------------------------------------------------------
-# SensiLLMDS — ties both steps into your agent loop
-# --------------------------------------------------------------------------------------
-
-class SensiLLMDS:
-    """
-    A two-step DSPy flow:
-      update (guesses/tryings/figured_out) → choose action
-    """
-
-    # You can override these if your app provides them elsewhere.
-    MODEL: str = "openai/gpt-4o-mini"
-    REASONING_EFFORT: str = "medium"
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        # These attributes are expected/used by choose_action().
-        self.game_state: Any = kwargs.get("game_state", {})
-        self.last_action: Any = kwargs.get("last_action", "NONE")
-        self.messages: List[Any] = kwargs.get("messages", [])
-        self.action_counter: int = kwargs.get("action_counter", 0)
-
-        # Rolling lists we maintain each turn:
-        self.guesses: List[str] = kwargs.get("guesses", [])
-        self.tryings: List[str] = kwargs.get("tryings", [])
-        self.figured_out: List[str] = kwargs.get("figured_out", [])
-
-        # Helpers for frame printing and diff; override by injection if needed.
-        self.pretty_print_3d = kwargs.get("pretty_print_3d", lambda f: str(f))
-
-        # Keep a rolling textual snapshot of the last frame so UpdateSignature has prev/current.
-        self._prev_frame_text: Optional[str] = None
-
-        # Planners
-        self._planner: Optional[TurnPlanner] = None
-        self._action_planner: Optional[ActionPlanner] = None
-
-    # ---- Step 1: update lists
-    def compute_turn_update(self, latest_frame) -> TurnUpdate:
-        planner = self._planner or TurnPlanner(max_items=8)
-        self._planner = planner
-
-        current_frame_text = self.pretty_print_3d(latest_frame.frame)
-        prev_frame_text = self._prev_frame_text or "(none)"
-
-        # Basic diff synthesis, replace with your richer diff if available on latest_frame/self
-        try:
-            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
-        except Exception:
-            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
-        diff_text = f"score={getattr(latest_frame, 'score', 'NA')}, state={state_name}"
-
-        updated = planner(
-            state=str(self.game_state),
-            prev_frame=prev_frame_text,
-            current_frame=current_frame_text,
-            prev_action=str(self.last_action),
-            diff=diff_text,
-            prev_guesses=self.guesses,
-            prev_tryings=self.tryings,
-            prev_figured_out=self.figured_out,
-        )
-
-        # Persist for the next turn
-        self.guesses = updated.guesses
-        self.tryings = updated.tryings
-        self.figured_out = updated.figured_out
-        self._prev_frame_text = current_frame_text
-        return updated
-
-    # ---- Step 2: decide action using updated lists
-    def choose_action(self, frames: List[Any], latest_frame: Any):
-        # Bootstrap on first call: return RESET and seed previous frame.
-        if self._prev_frame_text is None:
-            self._prev_frame_text = self.pretty_print_3d(latest_frame.frame)
-            reset_action = GameAction.RESET
-            payload = reset_action.set_data({})
-            reset_action.reasoning = None
-            self.last_action = reset_action.name
-            empty_update = TurnUpdate(
-                guesses=list(self.guesses),
-                tryings=list(self.tryings),
-                figured_out=list(self.figured_out),
-            )
-            return reset_action, payload, empty_update
-
-        # 1) Update lists
-        updated = self.compute_turn_update(latest_frame)
-
-        # 2) Choose action
-        action_planner = self._action_planner or ActionPlanner()
-        self._action_planner = action_planner
-
-        current_frame_text = self.pretty_print_3d(latest_frame.frame)
-        try:
-            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
-        except Exception:
-            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
-        diff_text = f"score={getattr(latest_frame, 'score', 'NA')}, state={state_name}"
-
-        choice = action_planner(
-            state=str(self.game_state),
-            latest_frame=current_frame_text,
-            last_action=str(self.last_action),
-            diff=diff_text,
-            guesses=updated.guesses,
-            tryings=updated.tryings,
-            figured_out=updated.figured_out,
-        )
-
-        action = choice.id
-        payload = action.set_data(choice.args or {})
-        action.reasoning = choice.rationale
-        self.last_action = action.name
-
-        # Telemetry/trace (optional): attach for your logs, not required by engine.
-        self.last_reasoning = {
-            "model": self.MODEL,
-            "action_chosen": getattr(action, "name", str(action)),
-            "reasoning_effort": self.REASONING_EFFORT,
-            "game_context": {
-                "score": getattr(latest_frame, "score", "NA"),
-                "state": state_name,
-                "action_counter": self.action_counter,
-                "frame_count": len(frames),
-            },
-            "updated": updated.model_dump(),
-            "planner_choice": choice.model_dump(),
-        }
-
-        # Caller can now send (enum_member, payload) to the game server.
-        return action, payload, updated
-
-
-class SensiLLMDSAgent(Agent):
-    """Agent wrapper that uses the SensiLLMDS DSPy planner."""
-
-    MAX_ACTIONS: int = 80
-    MODEL: str = "openai/gpt-4o-mini"
-    REASONING_EFFORT: str = "medium"
+class SensiLLM(LLM):
+    """Similar to LLM, with more senses."""
+    MAX_ACTIONS = 20
+    DO_OBSERVATION = False
+    MODEL = "gpt-5"
+    MESSAGE_LIMIT = 10
+    REASONING_EFFORT = "low"
+    hypothesis = []
+    testing = []
+    theories = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._planner = SensiLLMDS(
-            game_state={},
-            last_action="NONE",
-            messages=[],
-            action_counter=self.action_counter,
-            guesses=[],
-            tryings=[],
-            figured_out=[],
-            pretty_print_3d=self.pretty_print_3d,
-        )
-
-    def pretty_print_3d(self, array_3d: list[list[list[Any]]]) -> str:
-        lines: list[str] = []
-        for i, block in enumerate(array_3d):
-            lines.append(f"Grid {i}:")
-            for row in block:
-                lines.append(f"  {row}")
-            lines.append("")
-        return "\n".join(lines)
-
-    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
-        return any(
-            [
-                latest_frame.state is GameState.WIN,
-                # uncomment below to only let the agent play one time
-                # latest_frame.state is GameState.GAME_OVER,
-            ]
-        )
+        self._last_reasoning_tokens = 0
+        self._last_response_content = ""
+        self._total_reasoning_tokens = 0
 
     def choose_action(
-        self, frames: list[FrameData], latest_frame: FrameData
+            self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
-        # Provide basic game state context to the planner.
-        try:
-            state_name = getattr(latest_frame.state, "name", str(latest_frame.state))
-        except Exception:
-            state_name = str(getattr(latest_frame, "state", "UNKNOWN"))
-        self._planner.game_state = {
-            "score": getattr(latest_frame, "score", "NA"),
-            "state": state_name,
-        }
-        self._planner.action_counter = self.action_counter
+        """Choose which action the Agent should take, fill in any arguments, and return it."""
 
-        action, _payload, _updated = self._planner.choose_action(frames, latest_frame)
-        # Planner already sets action.data and action.reasoning.
+        logging.getLogger("openai").setLevel(logging.CRITICAL)
+        logging.getLogger("httpx").setLevel(logging.CRITICAL)
+        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
+
+        # have to manually trigger the first reset to kick off agent
+        if len(self.messages) == 0:
+            user_prompt = self.build_user_prompt(latest_frame)
+            message0 = {"role": "user", "content": user_prompt}
+            self.push_message(message0)
+            action = GameAction.RESET
+            return action
+
+        user_prompt = self.build_user_prompt(latest_frame)
+        senseofgame = {"role": "user", "content": user_prompt}
+        self.push_message(senseofgame)
+
+        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
+
+        # -------------------------------------- Ask LLM what to do ---------------------------------------------
+
+        logger.info("Sending to Assistant for action...")
+        try:
+            create_kwargs = {
+                "model": self.MODEL,
+                "messages": self.messages,
+            }
+            if self.REASONING_EFFORT is not None:
+                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
+            response = client.chat.completions.create(**create_kwargs)
+        except openai.BadRequestError as e:
+            logger.info(f"Message dump: {self.messages}")
+            raise e
+
+        # -------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
+        self.track_tokens(response.usage.total_tokens)
+        llmanswer = response.choices[0].message.content  # sampling the first llm response
+        logger.info(f"... got response {llmanswer}")
+        action = self.parse_action_from_llm_response(llmanswer)
+        logger.info(
+            f"Assistant: {action.name}"
+        )
+
+        action.reasoning = {
+            "model": self.MODEL,
+            "action_chosen": action.name,
+            "reasoning_effort": self.REASONING_EFFORT,
+            "reasoning_tokens": self._last_reasoning_tokens,
+            "total_reasoning_tokens": self._total_reasoning_tokens,
+            "game_context": {
+                "score": latest_frame.score,
+                "state": latest_frame.state.name,
+                "action_counter": self.action_counter,
+                "frame_count": len(frames),
+            },
+            "agent_type": "sinsi_llm",
+            "game_rules": "locksmith",
+            "response_preview": self._last_response_content[:200] + "..."
+            if len(self._last_response_content) > 200
+            else self._last_response_content,
+        }
+
         return action
+
+    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
+        """
+        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
+        and returns the corresponding GameAction enum member, or None if not found.
+        """
+        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
+        if not match:
+            return None
+
+        action_name = match.group(1)
+        try:
+            return GameAction[action_name]
+        except KeyError:
+            return None
+
+    def build_user_prompt(self, latest_frame: FrameData) -> str:
+        return textwrap.dedent(
+            """
+# CONTEXT:
+You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
+you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
+
+# State:
+
+
+# your current frame:
+
+
+# what you did last time:
+
+
+# the change it made to the board
+
+
+# you have a list of hypothesis
+
+
+# you have a list of things your testing
+{testing}
+
+# you keep proven tests under theory
+{theories}
+
+# TURN:
+Based on the your last action and the diff it has created:
+1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
+2. what are your new tests. The list of tests must be enclosed in <tests> tags 
+3. what are your theories. The list of theories must be enclosed in <theories> tags
+
+        """.format(
+                # state=self.game_state,
+                # latest_frame=self.pretty_print_3d(latest_frame.frame),
+                # last_action=self.last_action,
+                # dif=self.dif,
+                # hypthesis=self.hypthesis,
+                testing=self.testing,
+                theories=self.theories,
+            )
+        )
+
+    def build_func_resp_prompt(self, latest_frame: FrameData) -> str:
+        return textwrap.dedent(
+            """
+# State:
+{state}
+
+# Score:
+{score}
+
+# Frame:
+{latest_frame}
+
+# TURN:
+Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
+        """.format(
+                latest_frame=self.pretty_print_3d(latest_frame.frame),
+                score=latest_frame.score,
+                state=latest_frame.state.name,
+            )
+        )
+

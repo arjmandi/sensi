@@ -49,7 +49,7 @@ class Agent(ABC):
     cur.execute("CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame TEXT, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
 
 
 

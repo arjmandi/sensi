@@ -13,8 +13,7 @@ from .templates.llm_agents import (
     FastLLM,
     GuidedLLM,
     ReasoningLLM,
-    SensiLLMDS,
-    SensiLLMDSAgent,
+    SensiLLM,
 )
 from .templates.random_agent import Random
 from .templates.reasoning_agent import ReasoningAgent
@@ -36,7 +35,7 @@ for rec in Recorder.list():
 
 # update the agent dictionary to include subclasses of LLM class
 AVAILABLE_AGENTS["reasoningagent"] = ReasoningAgent
-AVAILABLE_AGENTS["sensillmds"] = SensiLLMDSAgent
+AVAILABLE_AGENTS["sensillm"] = SensiLLM
 
 
 __all__ = [
@@ -57,7 +56,6 @@ __all__ = [
     "Recorder",
     "Playback",
     "Sensi",
-    "SensiLLMDS",
-    "SensiLLMDSAgent",
+    "SensiLLM",
     "AVAILABLE_AGENTS",
 ]
