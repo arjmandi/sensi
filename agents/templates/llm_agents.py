@@ -13,6 +13,7 @@ import textwrap
 import re
 import openai
 from openai import OpenAI as OpenAIClient
+import sqlite3
 
 #
 # Compatibility shim for DSPy + LiteLLM.
@@ -404,11 +405,6 @@ class LLM(Agent):
                 "parameters": empty_params,
             },
             {
-                "name": GameAction.START.name,
-                "description": "Start a game. Must be called first when NOT_PLAYED or after GAME_OVER to play again.",
-                "parameters": empty_params,
-            },
-            {
                 "name": GameAction.ACTION1.name,
                 "description": "Send this simple input action (1, W, Up).",
                 "parameters": empty_params,
@@ -710,9 +706,14 @@ class SensiLLM(LLM):
     MODEL = "gpt-5"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
-    hypothesis = []
-    testing = []
-    theories = []
+
+    conn = sqlite3.connect("agent_state.db")
+
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -779,7 +780,7 @@ class SensiLLM(LLM):
                 "action_counter": self.action_counter,
                 "frame_count": len(frames),
             },
-            "agent_type": "sinsi_llm",
+            "agent_type": "sensi_llm",
             "game_rules": "locksmith",
             "response_preview": self._last_response_content[:200] + "..."
             if len(self._last_response_content) > 200
@@ -795,13 +796,13 @@ class SensiLLM(LLM):
         """
         match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
         if not match:
-            return None
+            return GameAction.RESET
 
         action_name = match.group(1)
         try:
             return GameAction[action_name]
         except KeyError:
-            return None
+            return GameAction.RESET
 
     def build_user_prompt(self, latest_frame: FrameData) -> str:
         return textwrap.dedent(
@@ -826,10 +827,10 @@ you can't see the actual screen. in each turn you get a print of the screen that
 
 
 # you have a list of things your testing
-{testing}
+
 
 # you keep proven tests under theory
-{theories}
+
 
 # TURN:
 Based on the your last action and the diff it has created:
@@ -843,8 +844,8 @@ Based on the your last action and the diff it has created:
                 # last_action=self.last_action,
                 # dif=self.dif,
                 # hypthesis=self.hypthesis,
-                testing=self.testing,
-                theories=self.theories,
+                # testing=self.testing,
+                # theories=self.theories,
             )
         )
 
@@ -868,4 +869,17 @@ Reply with a few sentences of plain-text strategy observation about the frame to
                 state=latest_frame.state.name,
             )
         )
+
+
+class Player1(dspy.Signature):
+    """Given the inputs, return a JSON with {guesses:[...], figured_out:[...]}.
+    Follow the provided guidelines strictly. Output only the JSON object."""
+    current_frame = dspy.InputField()
+    prev_frame = dspy.InputField()
+    prev_action_type = dspy.InputField()
+    prev_action = dspy.InputField()
+    diff = dspy.InputField()
+    losing_sequences = dspy.InputField()
+    guidelines = dspy.InputField(desc="full strategy/instructions for Player 1")
+    json_out = dspy.OutputField()
 
