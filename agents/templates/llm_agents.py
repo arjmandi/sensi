@@ -711,26 +711,31 @@ class SensiLLM(LLM):
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
 
-    prev_frame = None
-    prev_decision_type = 0
-    prev_action = GameAction.RESET
-    frame_diff = None
-    losing_sequences = []
-    prev_guesses = []
-    prev_figured_out = []
 
-
-    conn = sqlite3.connect("agent_state.db")
-    conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
-
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.prev_frame = None
+        self.prev_decision_type = 0
+        self.prev_action = GameAction.RESET
+        self.frame_diff = None
+        self.losing_sequences = []
+        self.prev_guesses = []
+        self.prev_figured_out = []
+
+        conn = sqlite3.connect("agent_state.db")
+        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+
+        cur = conn.cursor()
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
+
         # self._last_reasoning_tokens = 0
         # self._last_response_content = ""
         # self._total_reasoning_tokens = 0
@@ -786,7 +791,7 @@ class SensiLLM(LLM):
         )
         return big_img
 
-    def load_state_for_player1(self, game_id: str, card_id: str):
+    def load_prev_state_for_player1(self, game_id: str, card_id: str):
         cur = self.conn.cursor()
 
         game_row = cur.execute(
@@ -805,12 +810,42 @@ class SensiLLM(LLM):
 
         prev_frame_bytes = game_row["prev_frame"]
         self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
-        # Optional: force a mode
         self.prev_frame = self.prev_frame.convert("RGBA")
         self.prev_action = game_row["prev_action"]
         self.prev_decision_type = game_row["prev_decision_type"]
 
+        losing_rows = cur.execute(
+            """
+            SELECT losing_seq
+            FROM losing_actions_seqs
+            WHERE game_id = ?
+                AND card_id = ?
+            """,
+            (game_id, card_id),
+        ).fetchall()
+        self.losing_sequences = [json.loads(r["losing_seq"]) for r in losing_rows]
 
+        guesses_rows = cur.execute(
+            """
+            SELECT guess
+            FROM guesses
+            WHERE game_id = ?
+                AND card_id = ?
+            """,
+            (game_id, card_id),
+        ).fetchall()
+        self.prev_guesses = [r["guess"] for r in guesses_rows]
+
+        figout_rows = cur.execute(
+            """
+            SELECT figs
+            FROM figured_outs
+            WHERE game_id = ?
+                AND card_id = ?
+            """,
+            (game_id, card_id),
+        ).fetchall()
+        self.prev_figured_out = [r["figs"] for r in figout_rows]
 
 
 
@@ -822,28 +857,24 @@ class SensiLLM(LLM):
         action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- prepare inputs for observation  ------------------------------------
+        self.load_prev_state_for_player1(self, self.game_id, self.card_id)
+
         current_frame = self.grid_to_image(self.frames[-1])
-        prev_frame =
-        # prev_decision_type =
-        # prev_action =
-        # frame_diff =
-        # losing_sequences =
-        # prev_guesses =
-        # prev_figured_out =
+        frame_diff = self.frame_diff(current_frame, self.prev_frame)
+
+        logger.info("Sending to Assistant for action...")
         #
-        # logger.info("Sending to Assistant for action...")
-        #
-        # player1 = dspy.Predict(Player1)
-        # observations = player1(
-        #     current_frame=,
-        #     prev_frame = ,
-        #     prev_decision_type = ,
-        #     prev_action = ,
-        #     frame_diff = ,
-        #     losing_sequences = ,
-        #     prev_guesses = ,
-        #     prev_figured_out =
-        # )
+        player1 = dspy.Predict(Player1)
+        observations = player1(
+            current_frame=current_frame,
+            prev_frame = self.prev_frame,
+            prev_decision_type = self.prev_decision_type,
+            prev_action = self.prev_action,
+            frame_diff = frame_diff,
+            losing_sequences = self.losing_sequences,
+            prev_guesses = self.prev_guesses,
+            prev_figured_out = self.prev_figured_out
+        )
 
 
 
