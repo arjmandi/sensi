@@ -12,17 +12,69 @@ Rules
 r1: if the agent is in tool discovery, it must be able to update the description of the tools it's calling
 
 ## Design
-1. Sensi must learn what felt good to try and what didn't felt good
-2. 
+1. Sensi must learn what felt good to try and what didn't felt good 
+1.1. we couldn't articulate that well enough, while we pushed towards the guesses and informed decisions
+
 
 ## Bets
 1. We bet on implementing the tool calling ourselves to have more control over the logic of what function to call. we will limit the model output with pydantic or dspy, so we can always get the output correctly. but this bet is something that we're not sure and in case of failure it's better to also try giving the model the control for tool use.
-2. we bet on using DSPy to minimize the errors in retrieveing the objects from the prompts. it shouldn't for now interfere with our prompting but later we will use the optimization fro DSPy to test the performace
+2. we bet on using DSPy to minimize the errors in retrieving the objects from the prompts. it shouldn't for now interfere with our prompting, but later we will use the optimization for DSPy to test the performance
 
 
-### overal design points
+## next
+- [ ] the problem with dspy and litellm seems not a real problem for now to be able to focus on other parts we've left it open
+- [ ] since I'm introducing new variables to store between game states, I need to dissect the current code to add this functionality in a way that I understand it fully. otherwise I need to write the entire logic for running the agents and calling the apis.
+- [ ] frame data format is garbage! if the AI model is multi-modal, it's better to reconstruct the frame and feed it like image
+- [ ] using gemini will make a big difference
+- [ ] 
 
-the model **must** see the *new observation/state* after your action—otherwise it’s blind and can’t choose the next move. You don’t have to return the tool’s raw output “as-is,” but you **do** need to feed back a concise state update that the model can reason over.
+## considerations
+- we're ignoring available actions from the function response
+- 
+
+
+
+
+
+
+in case we want more precise stage definition
+class EstimateStage(dspy.Signature):
+    """Infer confidence stage (1–4) from counts/quality of guesses vs figured_out.
+    Return JSON: {"stage": 1|2|3|4, "why": "≤15 words"}.
+    Prefer higher stages when figured_out is strong and guesses are few."""
+    guesses = dspy.InputField()
+    figured_out = dspy.InputField()
+    json_out = dspy.OutputField()
+
+class ChooseAction(dspy.Signature):
+    """Given stage, frames, diff, last move, and Player 1 lists, pick exactly one action.
+    Return JSON: {"decision_type": "GUESS"|"INFORMED", "action": "ACTION1|ACTION2|ACTION3|ACTION4|ACTION5|ACTION7|RESET", "note": "≤20 words"}.
+    Trust figured_out > guesses; avoid actions known to cause loss."""
+    stage = dspy.InputField()
+    current_frame = dspy.InputField()
+    previous_frame = dspy.InputField()
+    last_move = dspy.InputField()
+    diff = dspy.InputField()
+    guesses = dspy.InputField()
+    figured_out = dspy.InputField()
+    guidelines = dspy.InputField()
+    json_out = dspy.OutputField()
+
+
+
+
+
+
+
+
+
+
+---
+
+
+### overall design points
+
+the model **must** see the *new observation/state* after your action—otherwise it’s blind and can’t choose the next move. You don’t have to return the tool’s raw output “as-is,” but you **do** need to feedback a concise state update that the model can reason over.
 
 A solid pattern for a game loop where you add your own thinking:
 1. You define tools

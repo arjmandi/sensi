@@ -14,6 +14,8 @@ import re
 import openai
 from openai import OpenAI as OpenAIClient
 import sqlite3
+import textwrap
+from typing import ClassVar, List
 
 #
 # Compatibility shim for DSPy + LiteLLM.
@@ -726,160 +728,128 @@ class SensiLLM(LLM):
     ) -> GameAction:
         """Choose which action the Agent should take, fill in any arguments, and return it."""
 
-        logging.getLogger("openai").setLevel(logging.CRITICAL)
-        logging.getLogger("httpx").setLevel(logging.CRITICAL)
-        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
-
-        # have to manually trigger the first reset to kick off agent
-        if len(self.messages) == 0:
-            user_prompt = self.build_user_prompt(latest_frame)
-            message0 = {"role": "user", "content": user_prompt}
-            self.push_message(message0)
-            action = GameAction.RESET
-            return action
-
-        user_prompt = self.build_user_prompt(latest_frame)
-        senseofgame = {"role": "user", "content": user_prompt}
-        self.push_message(senseofgame)
-
-        action = GameAction.ACTION5.name  # default action if LLM doesnt call one
+        action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- Ask LLM what to do ---------------------------------------------
+        # current_frame =
+        # prev_frame =
+        # prev_decision_type =
+        # prev_action =
+        # frame_diff =
+        # losing_sequences =
+        # prev_guesses =
+        # prev_figured_out =
+        #
+        # logger.info("Sending to Assistant for action...")
+        #
+        # player1 = dspy.Predict(Player1)
+        # observations = player1(
+        #     current_frame=,
+        #     prev_frame = ,
+        #     prev_decision_type = ,
+        #     prev_action = ,
+        #     frame_diff = ,
+        #     losing_sequences = ,
+        #     prev_guesses = ,
+        #     prev_figured_out =
+        # )
 
-        logger.info("Sending to Assistant for action...")
-        try:
-            create_kwargs = {
-                "model": self.MODEL,
-                "messages": self.messages,
-            }
-            if self.REASONING_EFFORT is not None:
-                create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-            response = client.chat.completions.create(**create_kwargs)
-        except openai.BadRequestError as e:
-            logger.info(f"Message dump: {self.messages}")
-            raise e
 
-        # -------------------------------------- Parse the results to send an actio to the ARC API ---------------------------------------------
-        self.track_tokens(response.usage.total_tokens)
-        llmanswer = response.choices[0].message.content  # sampling the first llm response
-        logger.info(f"... got response {llmanswer}")
-        action = self.parse_action_from_llm_response(llmanswer)
-        logger.info(
-            f"Assistant: {action.name}"
-        )
 
-        action.reasoning = {
-            "model": self.MODEL,
-            "action_chosen": action.name,
-            "reasoning_effort": self.REASONING_EFFORT,
-            "reasoning_tokens": self._last_reasoning_tokens,
-            "total_reasoning_tokens": self._total_reasoning_tokens,
-            "game_context": {
-                "score": latest_frame.score,
-                "state": latest_frame.state.name,
-                "action_counter": self.action_counter,
-                "frame_count": len(frames),
-            },
-            "agent_type": "sensi_llm",
-            "game_rules": "locksmith",
-            "response_preview": self._last_response_content[:200] + "..."
-            if len(self._last_response_content) > 200
-            else self._last_response_content,
-        }
 
         return action
 
-    def parse_action_from_llm_response(self, llmanswer: str) -> Optional[GameAction]:
-        """
-        Extracts the first ACTION keyword (e.g. 'ACTION3') from the LLM response
-        and returns the corresponding GameAction enum member, or None if not found.
-        """
-        match = re.search(r'\b(ACTION\d+|RESET|START)\b', llmanswer.upper())
-        if not match:
-            return GameAction.RESET
 
-        action_name = match.group(1)
-        try:
-            return GameAction[action_name]
-        except KeyError:
-            return GameAction.RESET
-
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are a curious teenager who is playing a vintage video game puzzle. similar to attari games the screen is a matrix of large pixels with different colors which demonstrate objects to interact with.
-you can't see the actual screen. in each turn you get a print of the screen that lists a set of arrays depicting the pixel screen in simple color codes. 
-
-# State:
-
-
-# your current frame:
-
-
-# what you did last time:
-
-
-# the change it made to the board
-
-
-# you have a list of hypothesis
-
-
-# you have a list of things your testing
-
-
-# you keep proven tests under theory
-
-
-# TURN:
-Based on the your last action and the diff it has created:
-1. what is your new list of hypothesis. The list of hypthiesis must be enclosed in <hypotheisis> tags 
-2. what are your new tests. The list of tests must be enclosed in <tests> tags 
-3. what are your theories. The list of theories must be enclosed in <theories> tags
-
-        """.format(
-                # state=self.game_state,
-                # latest_frame=self.pretty_print_3d(latest_frame.frame),
-                # last_action=self.last_action,
-                # dif=self.dif,
-                # hypthesis=self.hypthesis,
-                # testing=self.testing,
-                # theories=self.theories,
-            )
-        )
-
-    def build_func_resp_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# State:
-{state}
-
-# Score:
-{score}
-
-# Frame:
-{latest_frame}
-
-# TURN:
-Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
-        """.format(
-                latest_frame=self.pretty_print_3d(latest_frame.frame),
-                score=latest_frame.score,
-                state=latest_frame.state.name,
-            )
-        )
 
 
 class Player1(dspy.Signature):
-    """Given the inputs, return a JSON with {guesses:[...], figured_out:[...]}.
-    Follow the provided guidelines strictly. Output only the JSON object."""
+    """Given the inputs, Return two lists: guesses and figured_out.
+    Follow the provided guidelines strictly. Output only valid Python lists (no extra text)."""
+
+    PLAYER1_GUIDELINES: ClassVar[str] = textwrap.dedent("""
+    You're playing a vintage pixel-graphics puzzle along with your friend. You are on the same team. You're Player 1 and he is Player 2. Player 1 sees the game screen, Player 2 performs actions. You two work like a team very well.
+
+    To play as a team you two have come up with a simple tactic. Player 1 (you), who sees the game and what each action does, maintains two lists:
+    1) a list of "guesses"
+    2) a list of "figured_out" things.
+    Both lists will be visible to Player 2.
+
+    Usually we have 4 stages of confidence in any game:
+    stage 1: when we have no guess, no clue what each action does.
+    stage 2: once we figure out the actions and a little about the game environment.
+    stage 3: we have a lot of guesses about the game environment and some guesses on how to win.
+    stage 4: we’ve figured out the actions, we’ve figured out the environment, and we’ve figured out how to win.
+
+    Most reliably, a game can be won while in stage 4, but some games can be won in stages 3, 2, or even 1 due to being lucky and guessing the right thing early.
+
+    Player 1 (you), in each turn receives:
+    1. A snapshot of the screen as the current frame: [row][column][color code]
+    2. Previous frame in the same format
+    3. Previous type of decision Player 2 has done: GUESS or INFORMED
+    4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
+    5. Diff of frames to help identify changed areas
+    6. Losing action sequences: list of sequences of actions that led to game over in previous attempts
+
+    You, Player 1, populate the "guesses" list and "figured_out" list as below:
+    1. Develop guesses by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
+       Consider:
+         1) the last action
+         2) the changes in the frames
+         3) previous guesses
+         4) previous figured_out things
+         5) previous sequences that led to game over
+       Then write simple guesses.
+    2. Write all guesses you can make. For example, if you guess an area of the screen is showing a character, if there's a point counter, if there's a timer, etc. Be creative about guesses.
+    3. If, based on the last action, you have figured out what each action does, move guesses about that to the "figured_out" list. Write them as simple actions. For example, "ACTION1 jumps over things".
+    4. If, based on the last action, you have figured out things about the game environment or how to win, put them in "figured_out". For example, "taking the character to the door makes us win".
+    5. If you want your friend, Player 2, to further try an action to see if that makes you progress or lose, add it to the "guesses" list. When your friend is not certain which move to pick, he tries more guesses.
+    6. If, based on current figured_out items, you have further guesses, add them to your "guesses" list for next rounds.
+    7. Remove guesses that seem unlikely at this point. You have to forget useless guesses; otherwise everything will be a guess and the list becomes useless.
+    8. Develop guesses about "things that make you lose" and write them in the "guesses" list. Again, consider:
+         1) the last action
+         2) the changes in the frames
+         3) previous guesses
+         4) previous figured_out things
+         5) previous sequences that led to game over
+    9. If, based on the last action, you can say some guesses definitely make you lose, move them to "figured_out". Write simple sentences for this. Your friend, Player 2, relies on "figured_out" items to avoid things that make you lose.
+    10. Remove things you deem unlikely to make you lose from the "guesses" list.
+    11. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
+
+    You can only communicate with Player 2 through these lists. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop “figured_out” items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher stages of confidence.
+
+    So help him with smart “guesses” and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
+    """).strip()
+
+    # --- Inputs ---
     current_frame = dspy.InputField()
     prev_frame = dspy.InputField()
     prev_action_type = dspy.InputField()
     prev_action = dspy.InputField()
     diff = dspy.InputField()
     losing_sequences = dspy.InputField()
-    guidelines = dspy.InputField(desc="full strategy/instructions for Player 1")
-    json_out = dspy.OutputField()
+    previous_guesses = dspy.InputField()
+    previous_figured_out = dspy.InputField()
+    guidelines = dspy.InputField(desc=PLAYER1_GUIDELINES)
+
+    # --- Outputs as two lists ---
+    guesses: List[str] = dspy.OutputField(
+        desc="A Python list of guess strings, e.g. ['maybe ACTION1 jumps', ...]"
+    )
+    figured_out: List[str] = dspy.OutputField(
+        desc="A Python list of confirmed / figured-out statements."
+    )
+
+class Player2(dspy.Signature):
+    """ Given the input guesses and figured out items, provide and action.
+     Follow the provided guidelines strictly.  Output EXACTLY two lines, no extra text:
+    line1: decision type enum (GUESS or INFORMED)
+    line2: action enum (RESET|ACTION1|ACTION2|ACTION3|ACTION4|ACTION5|ACTION6|ACTION7)
+    Do not include punctuation, explanations, or extra lines."""
+
+    guesses: List[str] = dspy.InputField()
+    figured_out: List[str] = dspy.InputField()
+    decision_type = dspy.OutputField()
+    action = dspy.OutputField()
+
+
 
