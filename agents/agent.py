@@ -15,6 +15,8 @@ from requests.cookies import RequestsCookieJar
 from .recorder import Recorder
 from .structs import FrameData, GameAction, GameState, Scorecard
 from .tracing import trace_agent_session
+import sqlite3
+
 
 logger = logging.getLogger()
 
@@ -41,6 +43,15 @@ class Agent(ABC):
     # AgentOps tracing attributes
     trace: Any = None
     tags: list[str]
+    conn = sqlite3.connect("agent_state.db")
+
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+    cur.execute("CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame TEXT, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
+
+
 
     def __init__(
         self,
