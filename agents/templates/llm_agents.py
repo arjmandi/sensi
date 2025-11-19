@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import inspect
@@ -9,13 +10,14 @@ import types
 import json
 import logging
 import os
-import textwrap
 import re
 import openai
 from openai import OpenAI as OpenAIClient
 import sqlite3
 import textwrap
 from typing import ClassVar, List
+from PIL import Image
+import io
 
 #
 # Compatibility shim for DSPy + LiteLLM.
@@ -709,7 +711,17 @@ class SensiLLM(LLM):
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
 
+    prev_frame = None
+    prev_decision_type = 0
+    prev_action = GameAction.RESET
+    frame_diff = None
+    losing_sequences = []
+    prev_guesses = []
+    prev_figured_out = []
+
+
     conn = sqlite3.connect("agent_state.db")
+    conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
@@ -719,9 +731,88 @@ class SensiLLM(LLM):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._last_reasoning_tokens = 0
-        self._last_response_content = ""
-        self._total_reasoning_tokens = 0
+        # self._last_reasoning_tokens = 0
+        # self._last_response_content = ""
+        # self._total_reasoning_tokens = 0
+
+    def grid_to_image(grid: list[list[list[int]]]) -> Image.Image:
+        """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
+        color_map = [
+            (0, 0, 0),
+            (0, 0, 170),
+            (0, 170, 0),
+            (0, 170, 170),
+            (170, 0, 0),
+            (170, 0, 170),
+            (170, 85, 0),
+            (170, 170, 170),
+            (85, 85, 85),
+            (85, 85, 255),
+            (85, 255, 85),
+            (85, 255, 255),
+            (255, 85, 85),
+            (255, 85, 255),
+            (255, 255, 85),
+            (255, 255, 255),
+        ]
+
+        height = len(grid[0])
+        width = len(grid[0][0])
+        num_layers = len(grid)
+
+        # Add a small separator between grids if there are multiple layers
+        separator_width = 5 if num_layers > 1 else 0
+        total_width = (width * num_layers) + (separator_width * (num_layers - 1))
+
+        image = Image.new("RGB", (total_width, height), "white")
+        pixels = image.load()
+
+        for i, grid_layer in enumerate(grid):
+            # If you don't need logging, you can ignore inconsistency checks
+            if len(grid_layer) != height or len(grid_layer[0]) != width:
+                # just skip inconsistent layers
+                continue
+
+            offset_x = i * (width + separator_width)
+            for y in range(height):
+                for x in range(width):
+                    color_index = grid_layer[y][x] % 16
+                    pixels[x + offset_x, y] = color_map[color_index]
+
+        scale = 10  # 10x bigger pixels
+        big_img = image.resize(
+        (image.width * scale, image.height * scale),
+            resample=Image.NEAREST  # keep the pixel-art look
+        )
+        return big_img
+
+    def load_state_for_player1(self, game_id: str, card_id: str):
+        cur = self.conn.cursor()
+
+        game_row = cur.execute(
+            """
+            SELECT *
+            FROM game
+            WHERE game_id = ?
+              AND card_id = ?
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            (game_id, card_id),
+        ).fetchone()
+
+        if game_row is None:
+            raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
+
+        prev_frame_bytes = game_row["prev_frame"]
+        self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
+        # Optional: force a mode
+        self.prev_frame = self.prev_frame.convert("RGBA")
+        self.prev_action = game_row["prev_action"]
+        self.prev_decision_type = game_row["prev_decision_type"]
+
+
+
+
 
     def choose_action(
             self, frames: list[FrameData], latest_frame: FrameData
@@ -730,9 +821,9 @@ class SensiLLM(LLM):
 
         action = GameAction.RESET  # default action if LLM doesnt call one
 
-        # -------------------------------------- Ask LLM what to do ---------------------------------------------
-        # current_frame =
-        # prev_frame =
+        # -------------------------------------- prepare inputs for observation  ------------------------------------
+        current_frame = self.grid_to_image(self.frames[-1])
+        prev_frame =
         # prev_decision_type =
         # prev_action =
         # frame_diff =
@@ -760,6 +851,12 @@ class SensiLLM(LLM):
         return action
 
 
+
+
+
+class DecisionType(Enum):
+    GUESS : 0
+    INFORMED : 1
 
 
 class Player1(dspy.Signature):
@@ -831,7 +928,7 @@ class Player1(dspy.Signature):
     previous_figured_out = dspy.InputField()
     guidelines = dspy.InputField(desc=PLAYER1_GUIDELINES)
 
-    # --- Outputs as two lists ---
+    # --- Outputs ---
     guesses: List[str] = dspy.OutputField(
         desc="A Python list of guess strings, e.g. ['maybe ACTION1 jumps', ...]"
     )
@@ -846,8 +943,53 @@ class Player2(dspy.Signature):
     line2: action enum (RESET|ACTION1|ACTION2|ACTION3|ACTION4|ACTION5|ACTION6|ACTION7)
     Do not include punctuation, explanations, or extra lines."""
 
+    PLAYER2_GUIDELINES = textwrap.dedent("""
+    You're playing a vintage pixel-graphics puzzle along with your friend. You are on the same team. He is Player 1 and you are Player 2. Player 1 sees the game screen; Player 2 (you) performs actions. You two work together as a strong team.
+
+    Each turn, Player 1 receives:
+    1. A snapshot of the screen as the current frame.
+    2. The previous frame in the same format.
+    3. The last move Player 2 (you) has done.
+    4. A diff of frames to help identify changed areas.
+
+    To play as a team, you two have come up with a simple tactic.
+    Player 1, who sees the game and what each action does, maintains two lists:
+    1. A list of "guesses"
+    2. A list of "figured_out" things
+    Both lists are visible to Player 2 (you).
+
+    You, Player 2, play the game using:
+    1. The "guesses" from Player 1
+    2. The "figured_out" things from Player 1
+    3. Your stage of confidence
+
+    Usually, we have 4 stages of confidence in any game:
+    - Stage 1 – We have no guesses and no clue what each action does.
+    - Stage 2 – We’ve figured out the actions a bit and know a little about the game environment.
+    - Stage 3 – We have many guesses about the game environment and some guesses about how to win.
+    - Stage 4 – We’ve figured out the actions, we’ve figured out the environment, and we’ve figured out how to win.
+
+    Most reliably, a game can be won while in Stage 4, but some games can be won in Stages 3, 2, or even 1 by being lucky and guessing the right thing early.
+
+    First, review the lists of "guesses" and "figured_out" things, then estimate your stage of confidence:
+    - If there are many guesses and no or only a few "figured_out" items, you are in Stage 1.
+    - If you have very few guesses and a high number of "figured_out" items, you are near or in Stage 4, which means you know what each action does and you’ve mostly figured out the game. That’s when it’s time to do the actions that lead to winning.
+
+    Then, based on your stage of confidence, either try a guess by doing an action or make an informed action.
+
+    You must:
+    1. Choose a type of decision: GUESS or INFORMED.
+    2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET.
+
+    Choose exactly one action. More than one action will be rejected by the game.
+    While choosing, trust the current "guesses" list, the current "figured_out" list, and your stage of confidence to choose the best action.
+    """).strip()
+
+    # --- Inputs ---
     guesses: List[str] = dspy.InputField()
     figured_out: List[str] = dspy.InputField()
+
+    # --- Outputs ---
     decision_type = dspy.OutputField()
     action = dspy.OutputField()
 
