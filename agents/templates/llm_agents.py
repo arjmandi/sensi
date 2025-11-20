@@ -703,6 +703,9 @@ class GuidedLLM(LLM):
 # Structured output for the update step
 # --------------------------------------------------------------------------------------
 
+
+
+
 class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
     MAX_ACTIONS = 20
@@ -710,7 +713,8 @@ class SensiLLM(LLM):
     MODEL = "gpt-5"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
-
+    VALID_DT = {"GUESS", "INFORMED"}
+    VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
 
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -724,6 +728,8 @@ class SensiLLM(LLM):
         self.prev_figured_out = []
         self.frame_diff_module = FrameDiffModule()
         self.turnid = 0 #incremental id of each turn
+        self.VALID_DT = {"GUESS", "INFORMED"}
+        self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
 
         conn = sqlite3.connect("agent_state.db")
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
@@ -868,7 +874,7 @@ class SensiLLM(LLM):
         return prediction.diff_json.strip()
 
     def append_observation(conn, card_id, game_id, turnid,
-                        prev_frame_img, frame_diff):
+                        prev_frame_img, frame_diff, guesses, figured_out):
         cur = conn.cursor()
 
         frame_diff_str = json.dumps(frame_diff)
@@ -896,7 +902,43 @@ class SensiLLM(LLM):
             ),
         )
 
+        for guess in guesses:
+            cur.execute(
+                """
+                INSERT INTO guesses (game_id, card_id, guess)
+                VALUES (?, ?, ?)
+                """,
+                (game_id, card_id, guess),
+            )
+
+        # Store new figured_out items
+        for fig in figured_out:
+            cur.execute(
+                """
+                INSERT INTO figured_outs (game_id, card_id, figs)
+                VALUES (?, ?, ?)
+                """,
+                (game_id, card_id, fig),
+            )
+
         conn.commit()
+
+
+    def parse_two_line_enums(self, s: str):
+        lines = [ln.strip() for ln in s.strip().splitlines() if ln.strip()]
+        if len(lines) < 2:
+            raise ValueError(f"Expected 2 lines, got {len(lines)}: {lines}")
+
+        dt_raw, act_raw = lines[0], lines[1]
+        if dt_raw not in self.VALID_DT:
+            raise ValueError(f"Invalid decision type: {dt_raw}")
+        if act_raw not in self.VALID_ACT:
+            raise ValueError(f"Invalid action: {act_raw}")
+
+        # Map to Python enums
+        decision = DecisionType[dt_raw]
+        action = GameAction[act_raw]
+        return {"decision_type": decision, "action": action, "raw": s}
 
     def choose_action(
             self, frames: list[FrameData], latest_frame: FrameData
@@ -930,15 +972,32 @@ class SensiLLM(LLM):
         )
 
         #---------- append player1 output: the observation turn++ ----
+        parsed = json.loads(observations.json_out)
+        guesses = parsed.get("guesses", [])
+        figured_out = parsed.get("figured_out", [])
         self.append_observation(
             conn=conn,
             card_id=self.card_id,
             game_id=self.game_id,
             turnid=self.turnid+1,
-            prev_frame_img=current_frame,  # PIL.Image.Image
-            frame_diff=self.frame_diff,            # whatever structure you're using
+            prev_frame_img=current_frame,
+            frame_diff=self.frame_diff,
+            guesses=guesses,
+            figured_out=figured_out,
         )
+
+
         #---------- call the player 2 ----
+        player2 = dspy.Predict(Player2)
+        nextAction = player2(
+            guesses=guesses,
+            figured_out=figured_out,
+        )
+        try:
+            parsed = self.parse_two_line_enums(self, nextAction)
+            print("\nPARSED:", parsed["decision_type"], parsed["action"])
+        except Exception as e:
+            print("Parse error:", e)
 
         #---------- append player 2 output: action, decision ----
 
@@ -1001,7 +1060,6 @@ class FrameDiffModule(dspy.Module):
 class DecisionType(Enum):
     GUESS : 0
     INFORMED : 1
-
 
 class Player1(dspy.Signature):
     """Given the inputs, Return two lists: guesses and figured_out.
