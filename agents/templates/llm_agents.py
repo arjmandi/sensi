@@ -722,6 +722,8 @@ class SensiLLM(LLM):
         self.losing_sequences = []
         self.prev_guesses = []
         self.prev_figured_out = []
+        self.frame_diff_module = FrameDiffModule()
+        self.turnid = 0 #incremental id of each turn
 
         conn = sqlite3.connect("agent_state.db")
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
@@ -734,7 +736,7 @@ class SensiLLM(LLM):
         cur.execute(
             "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS game (game_id TEXT, game_state TEXT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, losing_seq TEXT, frame_diff TEXT)")
+            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turnid INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, frame_diff TEXT)")
 
         # self._last_reasoning_tokens = 0
         # self._last_response_content = ""
@@ -800,7 +802,7 @@ class SensiLLM(LLM):
             FROM game
             WHERE game_id = ?
               AND card_id = ?
-            ORDER BY rowid DESC LIMIT 1
+            ORDER BY turnid DESC LIMIT 1
             """,
             (game_id, card_id),
         ).fetchone()
@@ -808,6 +810,7 @@ class SensiLLM(LLM):
         if game_row is None:
             raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
 
+        self.turnid = game_row["turnid"]
         prev_frame_bytes = game_row["prev_frame"]
         self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
         self.prev_frame = self.prev_frame.convert("RGBA")
@@ -847,43 +850,153 @@ class SensiLLM(LLM):
         ).fetchall()
         self.prev_figured_out = [r["figs"] for r in figout_rows]
 
+    def frame_diff_finder(self, current_frame: Image.Image,prev_frame: Image.Image) -> str:
+        """
+        Uses DSPy + an LLM to describe differences between two game frames.
+        Returns:
+            A JSON string describing the diff (see FrameDiffSignature).
+        """
+        # Wrap PIL images as dspy.Image (DSPy will handle encoding/base64 etc.)
+        prev_img = dspy.Image(prev_frame)
+        current_img = dspy.Image(current_frame)
 
+        prediction = self.frame_diff_module(
+            prev_frame=prev_img,
+            current_frame=current_img,
+        )
+        # `prediction.diff_json` is already a string (ideally valid JSON).
+        return prediction.diff_json.strip()
+
+    def append_observation(conn, card_id, game_id, turnid,
+                        prev_frame_img, frame_diff):
+        cur = conn.cursor()
+
+        frame_diff_str = json.dumps(frame_diff)
+
+        # prev_frame as PNG bytes (BLOB)
+        buf = io.BytesIO()
+        prev_frame_img.save(buf, format="PNG")
+        prev_frame_bytes = buf.getvalue()
+
+        cur.execute(
+            """
+            INSERT INTO game (card_id,
+                              game_id,
+                              turnid,
+                              prev_frame,
+                              frame_diff)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                card_id,
+                game_id,
+                turnid,
+                prev_frame_bytes,
+                frame_diff_str,
+            ),
+        )
+
+        conn.commit()
 
     def choose_action(
             self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
         """Choose which action the Agent should take, fill in any arguments, and return it."""
+        conn = sqlite3.connect("agent_state.db")
 
         action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- prepare inputs for observation  ------------------------------------
         self.load_prev_state_for_player1(self, self.game_id, self.card_id)
-
         current_frame = self.grid_to_image(self.frames[-1])
-        frame_diff = self.frame_diff(current_frame, self.prev_frame)
+
+        diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
+        self.frame_diff = json.loads(diff_json_str)
 
         logger.info("Sending to Assistant for action...")
-        #
+
+
+        #---------- player1 observes the game and previous step----
         player1 = dspy.Predict(Player1)
         observations = player1(
             current_frame=current_frame,
             prev_frame = self.prev_frame,
             prev_decision_type = self.prev_decision_type,
             prev_action = self.prev_action,
-            frame_diff = frame_diff,
+            frame_diff = self.frame_diff,
             losing_sequences = self.losing_sequences,
             prev_guesses = self.prev_guesses,
             prev_figured_out = self.prev_figured_out
         )
 
+        #---------- append player1 output: the observation turn++ ----
+        self.append_observation(
+            conn=conn,
+            card_id=self.card_id,
+            game_id=self.game_id,
+            turnid=self.turnid+1,
+            prev_frame_img=current_frame,  # PIL.Image.Image
+            frame_diff=self.frame_diff,            # whatever structure you're using
+        )
+        #---------- call the player 2 ----
 
+        #---------- append player 2 output: action, decision ----
 
 
         return action
 
+class FrameDiffSignature(dspy.Signature):
+    """
+    Given two frames from the SAME game environment:
+    - `prev_frame`: the frame BEFORE an action.
+    - `current_frame`: the frame AFTER the action.
 
+    Identify **all meaningful visual differences** that relate to gameplay.
 
+    Return a SINGLE JSON object as a string with the following schema:
 
+    {
+      "added_objects": [
+        {"name": str, "position_hint": str, "color_or_shape": str}
+      ],
+      "removed_objects": [
+        {"name": str, "position_hint": str}
+      ],
+      "moved_objects": [
+        {"name": str, "from": str, "to": str}
+      ],
+      "ui_changes": [
+        {"description": str}
+      ],
+      "score_or_status_changes": [
+        {"description": str}
+      ],
+      "terminal_event": bool,
+      "high_level_summary": str
+    }
+
+    - Use short, consistent names for objects (e.g. "player", "enemy_1",
+      "coin", "projectile", "health_bar", etc.).
+    - `position_hint` can be rough ("top-left", "center", "near player").
+    - If something is unknown, use null or an empty list, but keep all keys.
+    """
+
+    prev_frame: dspy.Image   = dspy.InputField(desc="Frame before the action.")
+    current_frame: dspy.Image = dspy.InputField(desc="Frame after the action.")
+    diff_json: str           = dspy.OutputField(
+        desc="A single JSON object (string) strictly following the schema above."
+    )
+
+class FrameDiffModule(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self._predict = dspy.Predict(FrameDiffSignature)
+
+    def forward(self, prev_frame: dspy.Image, current_frame: dspy.Image):
+        """
+        prev_frame & current_frame should be dspy.Image objects.
+        """
+        return self._predict(prev_frame=prev_frame, current_frame=current_frame)
 
 class DecisionType(Enum):
     GUESS : 0
