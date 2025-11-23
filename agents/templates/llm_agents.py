@@ -552,7 +552,6 @@ class SensiLLM(LLM):
     VALID_DT = {"GUESS", "INFORMED"}
     VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
 
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.prev_frame = None
