@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from sqlite3 import Connection
 from typing import Any, Dict, List, Optional, Tuple
 
 import inspect
@@ -730,11 +731,11 @@ class SensiLLM(LLM):
         self.turnid = 0 #incremental id of each turn
         self.VALID_DT = {"GUESS", "INFORMED"}
         self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
+        self.agent_db_name = "agent_state.db"
+        self.conn = sqlite3.connect(self.agent_db_name)
+        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
-        conn = sqlite3.connect("agent_state.db")
-        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
-
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute(
             "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
         cur.execute(
@@ -742,11 +743,8 @@ class SensiLLM(LLM):
         cur.execute(
             "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turnid INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, card_id TEXT, frame_diff TEXT)")
+            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turnid INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
 
-        # self._last_reasoning_tokens = 0
-        # self._last_response_content = ""
-        # self._total_reasoning_tokens = 0
 
     def grid_to_image(grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
@@ -800,6 +798,9 @@ class SensiLLM(LLM):
         return big_img
 
     def load_prev_state_for_player1(self, game_id: str, card_id: str):
+        self.conn = sqlite3.connect(self.agent_db_name)
+        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+
         cur = self.conn.cursor()
 
         game_row = cur.execute(
@@ -944,12 +945,15 @@ class SensiLLM(LLM):
             self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
         """Choose which action the Agent should take, fill in any arguments, and return it."""
-        conn = sqlite3.connect("agent_state.db")
+        self.conn = sqlite3.connect(self.agent_db_name)
+        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+
+        cur = self.conn.cursor()
 
         action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- prepare inputs for observation  ------------------------------------
-        self.load_prev_state_for_player1(self, self.game_id, self.card_id)
+        self.load_prev_state_for_player1( self.game_id, self.card_id)
         current_frame = self.grid_to_image(self.frames[-1])
 
         diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
@@ -1145,7 +1149,7 @@ class Player2(dspy.Signature):
     line2: action enum (RESET|ACTION1|ACTION2|ACTION3|ACTION4|ACTION5|ACTION6|ACTION7)
     Do not include punctuation, explanations, or extra lines."""
 
-    PLAYER2_GUIDELINES = textwrap.dedent("""
+    PLAYER2_GUIDELINES: ClassVar[str] = textwrap.dedent("""
     You're playing a vintage pixel-graphics puzzle along with your friend. You are on the same team. He is Player 1 and you are Player 2. Player 1 sees the game screen; Player 2 (you) performs actions. You two work together as a strong team.
 
     Each turn, Player 1 receives:
