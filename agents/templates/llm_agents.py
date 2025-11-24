@@ -562,7 +562,7 @@ class SensiLLM(LLM):
         self.prev_guesses = []
         self.prev_figured_out = []
         self.frame_diff_module = FrameDiffModule()
-        self.turnid = 0 #incremental id of each turn
+        self.turn_id = 0 #incremental id of each turn
         self.VALID_DT = {"GUESS", "INFORMED"}
         self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
         self.agent_db_name = "agent_state.db"
@@ -577,7 +577,7 @@ class SensiLLM(LLM):
         cur.execute(
             "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turnid INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
+            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turn_id INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
 
     def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
@@ -641,7 +641,7 @@ class SensiLLM(LLM):
             FROM game
             WHERE game_id = ?
               AND card_id = ?
-            ORDER BY turnid DESC LIMIT 1
+            ORDER BY turn_id DESC LIMIT 1
             """,
             (game_id, card_id),
         ).fetchone()
@@ -649,10 +649,11 @@ class SensiLLM(LLM):
         # if game_row is None:
         #     raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
 
-        self.turnid = game_row["turnid"]
+        self.turn_id = game_row["turn_id"]
         prev_frame_bytes = game_row["prev_frame"]
-        self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
-        self.prev_frame = self.prev_frame.convert("RGBA")
+        if prev_frame_bytes:
+            self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
+            self.prev_frame = self.prev_frame.convert("RGBA")
         self.prev_action = game_row["prev_action"]
         self.prev_decision_type = game_row["prev_decision_type"]
 
@@ -689,7 +690,7 @@ class SensiLLM(LLM):
         ).fetchall()
         self.prev_figured_out = [r["figs"] for r in figout_rows]
 
-    def frame_diff_finder(self, current_frame: Image.Image,prev_frame: Image.Image) -> str:
+    def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
         """
         Uses DSPy + an LLM to describe differences between two game frames.
         Returns:
@@ -706,7 +707,7 @@ class SensiLLM(LLM):
         # `prediction.diff_json` is already a string (ideally valid JSON).
         return prediction.diff_json.strip()
 
-    def append_observation(self, card_id, game_id, turnid,
+    def append_observation(self, card_id, game_id, turn_id,
                         prev_frame_img, frame_diff, guesses, figured_out):
         conn = sqlite3.connect(self.agent_db_name)
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
@@ -716,14 +717,16 @@ class SensiLLM(LLM):
 
         # prev_frame as PNG bytes (BLOB)
         buf = io.BytesIO()
-        prev_frame_img.save(buf, format="PNG")
-        prev_frame_bytes = buf.getvalue()
+        prev_frame_bytes = None
+        if prev_frame_img:
+            prev_frame_img.save(buf, format="PNG")
+            prev_frame_bytes = buf.getvalue()
 
         cur.execute(
             """
             INSERT INTO game (card_id,
                               game_id,
-                              turnid,
+                              turn_id,
                               prev_frame,
                               frame_diff)
             VALUES (?, ?, ?, ?, ?)
@@ -731,7 +734,7 @@ class SensiLLM(LLM):
             (
                 card_id,
                 game_id,
-                turnid,
+                turn_id,
                 prev_frame_bytes,
                 frame_diff_str,
             ),
@@ -811,7 +814,7 @@ class SensiLLM(LLM):
         self.append_observation(
             card_id=self.card_id,
             game_id=self.game_id,
-            turnid=self.turnid+1,
+            turn_id=self.turn_id+1,
             prev_frame_img=current_frame,
             frame_diff=self.frame_diff,
             guesses=guesses,
