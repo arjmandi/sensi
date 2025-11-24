@@ -706,8 +706,10 @@ class SensiLLM(LLM):
         # `prediction.diff_json` is already a string (ideally valid JSON).
         return prediction.diff_json.strip()
 
-    def append_observation(conn, card_id, game_id, turnid,
+    def append_observation(self, card_id, game_id, turnid,
                         prev_frame_img, frame_diff, guesses, figured_out):
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
         cur = conn.cursor()
 
         frame_diff_str = json.dumps(frame_diff)
@@ -779,15 +781,12 @@ class SensiLLM(LLM):
         action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- prepare inputs for observation  ------------------------------------
-        is_this_start = False
-        if latest_frame.state == GameState.NOT_PLAYED:
-            return GameAction.RESET
-
-        self.load_prev_state_for_player1( self.game_id, self.card_id)
-        current_frame = self.grid_to_image(self.frames[-1].frame)
-
-        diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
-        self.frame_diff = json.loads(diff_json_str)
+        current_frame = None
+        if latest_frame.frame != []:
+            self.load_prev_state_for_player1( self.game_id, self.card_id)
+            current_frame = self.grid_to_image(self.frames[-1].frame)
+            diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
+            self.frame_diff = json.loads(diff_json_str)
 
         logger.info("Sending to Assistant for action...")
 
@@ -802,15 +801,14 @@ class SensiLLM(LLM):
             frame_diff = self.frame_diff,
             losing_sequences = self.losing_sequences,
             prev_guesses = self.prev_guesses,
-            prev_figured_out = self.prev_figured_out
+            prev_figured_out = self.prev_figured_out,
+            guidelines = Player1.PLAYER1_GUIDELINES,
         )
 
         #---------- append player1 output: the observation turn++ ----
-        parsed = json.loads(observations.json_out)
-        guesses = parsed.get("guesses", [])
-        figured_out = parsed.get("figured_out", [])
+        guesses = getattr(observations, "guesses", []) or []
+        figured_out = getattr(observations, "figured_out", []) or []
         self.append_observation(
-            conn=conn,
             card_id=self.card_id,
             game_id=self.game_id,
             turnid=self.turnid+1,
@@ -828,7 +826,7 @@ class SensiLLM(LLM):
             figured_out=figured_out,
         )
         try:
-            parsed = self.parse_two_line_enums(self, nextAction)
+            parsed = self.parse_two_line_enums(str(nextAction))
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
         except Exception as e:
             print("Parse error:", e)
@@ -868,6 +866,7 @@ class FrameDiffSignature(dspy.Signature):
       "high_level_summary": str
     }
 
+    - If pre_frame is empty, it's the first frame of the game. no change.
     - Use short, consistent names for objects (e.g. "player", "enemy_1",
       "coin", "projectile", "health_bar", etc.).
     - `position_hint` can be rough ("top-left", "center", "near player").
@@ -956,13 +955,13 @@ class Player1(dspy.Signature):
     # --- Inputs ---
     current_frame = dspy.InputField()
     prev_frame = dspy.InputField()
-    prev_action_type = dspy.InputField()
+    prev_decision_type = dspy.InputField()
     prev_action = dspy.InputField()
-    diff = dspy.InputField()
+    frame_diff = dspy.InputField()
     losing_sequences = dspy.InputField()
-    previous_guesses = dspy.InputField()
-    previous_figured_out = dspy.InputField()
-    guidelines = dspy.InputField(desc=PLAYER1_GUIDELINES)
+    prev_guesses = dspy.InputField()
+    prev_figured_out = dspy.InputField()
+    guidelines = dspy.InputField()
 
     # --- Outputs ---
     guesses: List[str] = dspy.OutputField(
@@ -1028,6 +1027,3 @@ class Player2(dspy.Signature):
     # --- Outputs ---
     decision_type = dspy.OutputField()
     action = dspy.OutputField()
-
-
-
