@@ -18,7 +18,7 @@ import textwrap
 from typing import ClassVar, List
 from PIL import Image
 import io
-from dspy.adapters.image_utils import Image as DSPyImage
+from dspy.adapters.image_utils import Image as DSPyImage, encode_image
 
 #
 # Compatibility shim for DSPy + LiteLLM.
@@ -699,7 +699,7 @@ class SensiLLM(LLM):
         # Wrap PIL images as dspy.Image (DSPy will handle encoding/base64 etc.)
         prev_img = None
         if prev_frame:
-            prev_img = DSPyImage.from_PIL(prev_frame)
+            prev_img =  DSPyImage(url=encode_image(prev_frame))
         else:
             prev_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
             buf = io.BytesIO()
@@ -707,7 +707,7 @@ class SensiLLM(LLM):
 
         current_img = None
         if current_frame:
-            current_img = DSPyImage.from_PIL(current_frame)
+            current_img =  DSPyImage(url=encode_image(current_frame))
         else:
             current_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
             buf = io.BytesIO()
@@ -843,7 +843,7 @@ class SensiLLM(LLM):
             figured_out=figured_out,
         )
         try:
-            parsed = self.parse_two_line_enums(nextAction)
+            parsed = self.parse_two_line_enums(str(nextAction))
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
         except Exception as e:
             print("Parse error:", e)
