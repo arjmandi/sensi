@@ -5,7 +5,6 @@ description = "ARC-AGI-3-Agents"
 readme = "readme.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dspy-ai==2.4.9",
     "tiktoken>=0.7", # tokenizer (token counting, chunking)
     "orjson>=3.10", # faster JSON (logging/serialization)
     "dotenv>=0.9.9",
@@ -19,11 +18,13 @@ dependencies = [
     "requests>=2.32.4",
     "smolagents>=1.20.0",
     "fastapi>=0.121.2",
-    "litellm==1.56.6",
     "cachetools>=6.2.2",
     "json-repair>=0.12",
     "cloudpickle>=2.2",
     "asyncer>=0.0.7",
+    "dspy==2.5.26",
+    "dspy-ai==2.5.26",
+    "litellm==1.49.1",
 ]
 
 [dependency-groups]
@@ -34,11 +35,6 @@ dev = [
     "pytest-asyncio>=1.0.0",
     "requests-mock>=1.12.1",
     "ruff>=0.11.4",
-]
-
-[project.optional-dependencies]
-agentops = [
-    "agentops>=0.4.18",
 ]
 
 [tool.mypy]
