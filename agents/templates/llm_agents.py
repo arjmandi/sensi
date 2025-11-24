@@ -10,7 +10,6 @@ import types
 import json
 import logging
 import os
-import re
 import openai
 from openai import OpenAI as OpenAIClient
 import sqlite3
@@ -131,14 +130,13 @@ from ..structs import FrameData, GameAction, GameState
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 
 import dspy
-from pydantic import BaseModel, Field, field_validator
-from dspy import Predict
+
 
 # --------------------------------------------------------------------------------------
 # Optional: Configure your LM once here (or do it in your app bootstrap)
 # --------------------------------------------------------------------------------------
 
-def configure_llm(model: str = "openai/gpt-4o-mini") -> None:
+def configure_llm(model: str = "openai/gpt-5.1") -> None:
     try:
         dspy.settings.configure(lm=dspy.LM(model, cache=True))
     except Exception:
@@ -843,7 +841,11 @@ class SensiLLM(LLM):
             figured_out=figured_out,
         )
         try:
-            parsed = self.parse_two_line_enums(str(nextAction))
+            # parsed = self.parse_two_line_enums(str(nextAction))
+            dt = getattr(nextAction, "decision_type", "")
+            act = getattr(nextAction, "action", "")
+            raw = f"{dt}\n{act}"
+            parsed = self.parse_two_line_enums(raw)
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
         except Exception as e:
             print("Parse error:", e)
