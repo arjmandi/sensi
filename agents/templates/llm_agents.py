@@ -138,7 +138,12 @@ import dspy
 
 def configure_llm(model: str = "openai/gpt-5.1") -> None:
     try:
-        dspy.settings.configure(lm=dspy.LM(model, cache=True))
+        lm = dspy.LM(model, cache=True)
+        # dspy.settings.configure(lm=dspy.LM(model, cache=True))
+        lm.kwargs.pop("max_tokens", None)
+        lm.kwargs["max_completion_tokens"] = 4000
+        lm.kwargs.setdefault("temperature", 1.0)
+        dspy.settings.configure(lm=lm)
     except Exception:
         # In case DSPy is configured elsewhere or the model alias differs.
         pass
@@ -910,8 +915,8 @@ class FrameDiffModule(dspy.Module):
         return self._predict(prev_frame=prev_frame, current_frame=current_frame)
 
 class DecisionType(Enum):
-    GUESS : 0
-    INFORMED : 1
+    GUESS = 0
+    INFORMED = 1
 
 class Player1(dspy.Signature):
     """Given the inputs, Return two lists: guesses and figured_out.
