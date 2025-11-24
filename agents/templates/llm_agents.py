@@ -566,10 +566,10 @@ class SensiLLM(LLM):
         self.VALID_DT = {"GUESS", "INFORMED"}
         self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
         self.agent_db_name = "agent_state.db"
-        self.conn = sqlite3.connect(self.agent_db_name)
-        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
         cur.execute(
@@ -579,7 +579,7 @@ class SensiLLM(LLM):
         cur.execute(
             "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turnid INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
 
-    def grid_to_image(grid: list[list[list[int]]]) -> Image.Image:
+    def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
         color_map = [
             (0, 0, 0),
@@ -631,10 +631,9 @@ class SensiLLM(LLM):
         return big_img
 
     def load_prev_state_for_player1(self, game_id: str, card_id: str):
-        self.conn = sqlite3.connect(self.agent_db_name)
-        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
-
-        cur = self.conn.cursor()
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        cur = conn.cursor()
 
         game_row = cur.execute(
             """
@@ -647,8 +646,8 @@ class SensiLLM(LLM):
             (game_id, card_id),
         ).fetchone()
 
-        if game_row is None:
-            raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
+        # if game_row is None:
+        #     raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
 
         self.turnid = game_row["turnid"]
         prev_frame_bytes = game_row["prev_frame"]
@@ -757,7 +756,6 @@ class SensiLLM(LLM):
 
         conn.commit()
 
-
     def parse_two_line_enums(self, s: str):
         lines = [ln.strip() for ln in s.strip().splitlines() if ln.strip()]
         if len(lines) < 2:
@@ -778,16 +776,15 @@ class SensiLLM(LLM):
             self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
         """Choose which action the Agent should take, fill in any arguments, and return it."""
-        self.conn = sqlite3.connect(self.agent_db_name)
-        self.conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
-
-        cur = self.conn.cursor()
-
         action = GameAction.RESET  # default action if LLM doesnt call one
 
         # -------------------------------------- prepare inputs for observation  ------------------------------------
+        is_this_start = False
+        if latest_frame.state == GameState.NOT_PLAYED:
+            return GameAction.RESET
+
         self.load_prev_state_for_player1( self.game_id, self.card_id)
-        current_frame = self.grid_to_image(self.frames[-1])
+        current_frame = self.grid_to_image(self.frames[-1].frame)
 
         diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
         self.frame_diff = json.loads(diff_json_str)
