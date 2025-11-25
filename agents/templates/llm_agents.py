@@ -768,7 +768,7 @@ class SensiLLM(LLM):
         self.append_observation(
             card_id=self.card_id,
             game_id=self.game_id,
-            turn_id=self.turn_id+1,
+            turn_id=self.turn_id,
             prev_frame_img=current_frame,
             frame_diff=self.frame_diff,
             guesses=guesses,
