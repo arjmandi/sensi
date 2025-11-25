@@ -837,7 +837,11 @@ class SensiLLM(LLM):
             current_frame = self.grid_to_image(self.frames[-1].frame)
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
             self.frame_diff = json.loads(diff_json_str)
-
+        else:
+            figured_out = ["RESET starts the game"]
+            self.append_observation(self.card_id,self.game_id, self.turn_id + 1,current_frame, self.frame_diff, None, figured_out)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
+            return action #the first run, start the game
         logger.info("Sending to Assistant for action...")
 
 
@@ -875,6 +879,7 @@ class SensiLLM(LLM):
             guesses=guesses,
             figured_out=figured_out,
         )
+
         parsed = []
         try:
             # parsed = self.parse_two_line_enums(str(nextAction))
@@ -883,13 +888,14 @@ class SensiLLM(LLM):
             raw = f"{dt}\n{act}"
             parsed = self.parse_two_line_enums(raw)
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
-            self.append_decision(parsed["decision_type"], parsed["action"])
+            self.append_decision(self.card_id, self.game_id, self.turn_id+1, parsed["decision_type"].name, parsed["action"].name)
         except Exception as e:
             print("Parse error:", e)
 
         #---------- append player 2 output: action, decision ----
 
-        return parsed["action"]
+        action = parsed["action"]
+        return action
 
 class FrameDiffSignature(dspy.Signature):
     """
