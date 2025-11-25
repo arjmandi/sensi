@@ -4,9 +4,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-import inspect
-import sys
-import types
 import json
 import logging
 import os
@@ -19,112 +16,8 @@ from PIL import Image
 import io
 from dspy.adapters.image_utils import Image as DSPyImage, encode_image
 import litellm
-
 litellm.cache = None
 
-#
-# Compatibility shim for DSPy + LiteLLM.
-# DSPy>=2.5 expects `litellm.Router(retry_policy=RetryPolicy(...))`, but the
-# version of LiteLLM pinned in this project (1.9.4) exposes `Router` without
-# a `retry_policy` parameter and has no `RetryPolicy` helper.  This shim
-# patches LiteLLM at import time so that DSPy can import and construct
-# `Router` without errors, while still delegating to the original Router
-# implementation under the hood.
-#
-# try:
-#     import litellm
-#     import litellm.router as _litellm_router
-#
-#     litellm.cache = None
-#     # Patch Router to accept `retry_policy` if the installed LiteLLM is older.
-#     _router = getattr(litellm, "Router", None)
-#     if callable(_router):
-#         router_sig = inspect.signature(_router)
-#         if "retry_policy" not in router_sig.parameters:
-#
-#             class _RetryPolicy:
-#                 def __init__(self, **kwargs: Any) -> None:
-#                     for key, value in kwargs.items():
-#                         setattr(self, key, value)
-#
-#             BaseRouter = _router
-#
-#             class _PatchedRouter(BaseRouter):  # type: ignore[misc]
-#                 def __init__(
-#                     self,
-#                     *args: Any,
-#                     retry_policy: Optional["_RetryPolicy"] = None,
-#                     **kwargs: Any,
-#                 ) -> None:
-#                     num_retries = kwargs.pop("num_retries", None)
-#                     if num_retries is None and retry_policy is not None:
-#                         retries = [
-#                             getattr(retry_policy, "TimeoutErrorRetries", 0),
-#                             getattr(retry_policy, "RateLimitErrorRetries", 0),
-#                             getattr(
-#                                 retry_policy,
-#                                 "InternalServerErrorRetries",
-#                                 0,
-#                             ),
-#                         ]
-#                         num_retries = max(retries) if any(retries) else 0
-#
-#                     kwargs.pop("retry_policy", None)
-#                     super().__init__(*args, num_retries=num_retries or 0, **kwargs)
-#
-#                 # Drop the `cache` kwarg that DSPy passes through Router into
-#                 # LiteLLM; the old LiteLLM version does not understand it and
-#                 # would forward it all the way to the OpenAI client.
-#                 def completion(
-#                     self,
-#                     model: str,
-#                     messages: List[Dict[str, Any]],
-#                     **kwargs: Any,
-#                 ):
-#                     kwargs.pop("cache", None)
-#                     return super().completion(model=model, messages=messages, **kwargs)
-#
-#                 async def acompletion(
-#                     self,
-#                     model: str,
-#                     messages: List[Dict[str, Any]],
-#                     **kwargs: Any,
-#                 ):
-#                     kwargs.pop("cache", None)
-#                     return await super().acompletion(model=model, messages=messages, **kwargs)
-#
-#             litellm.Router = _PatchedRouter  # type: ignore[assignment]
-#             _litellm_router.Router = _PatchedRouter
-#             if not hasattr(_litellm_router, "RetryPolicy"):
-#                 _litellm_router.RetryPolicy = _RetryPolicy
-#
-#     # Patch caching so `from litellm.caching import Cache` (used by DSPy)
-#     # works even on older LiteLLM versions that don't support the
-#     # `disk_cache_dir` / `type=\"disk\"` API.
-#     _OrigCache = getattr(litellm, "Cache", None)
-#     if _OrigCache is not None and callable(_OrigCache):
-#
-#         class _CompatCache(_OrigCache):  # type: ignore[misc]
-#             def __init__(
-#                 self,
-#                 *args: Any,
-#                 disk_cache_dir: Optional[str] = None,
-#                 type: str = "local",
-#                 **kwargs: Any,
-#             ) -> None:
-#                 # Map new-style arguments onto the older Cache API.
-#                 kwargs.pop("disk_cache_dir", None)
-#                 cache_type = kwargs.pop("type", type)
-#                 if cache_type == "disk":
-#                     cache_type = "local"
-#                 super().__init__(*args, type=cache_type, **kwargs)
-#
-#         caching_mod = types.ModuleType("litellm.caching")
-#         caching_mod.Cache = _CompatCache
-#         sys.modules["litellm.caching"] = caching_mod
-# except Exception:
-#     # If anything goes wrong, fall back to LiteLLM's default behavior.
-#     pass
 
 from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
@@ -577,12 +470,18 @@ class SensiLLM(LLM):
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
         cur = conn.cursor()
+        # cur.execute(
+        #     "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
+        # cur.execute(
+        #     "CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
+        # cur.execute(
+        #     "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
+            "CREATE TABLE IF NOT EXISTS guesses (game_id TEXT, card_id TEXT, guess TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
+            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, figs TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
             "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turn_id INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
 

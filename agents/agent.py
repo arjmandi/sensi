@@ -77,11 +77,13 @@ class Agent(ABC):
     def main(self) -> None:
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
+        # while (
+        #     not self.is_won(self.frames, self.frames[-1])
+        #     and self.action_counter <= self.MAX_ACTIONS
+        # ):
         while (
-            not self.is_won(self.frames, self.frames[-1])
-            and self.action_counter <= self.MAX_ACTIONS
+                not self.is_won(self.frames, self.frames[-1])
         ):
-            
 
             action = self.choose_action(self.frames, self.frames[-1])
             if frame := self.take_action(action):
