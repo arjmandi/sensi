@@ -22,9 +22,9 @@ dependencies = [
     "json-repair>=0.12",
     "cloudpickle>=2.2",
     "asyncer>=0.0.7",
-    "dspy==2.5.26",
-    "dspy-ai==2.5.26",
-    "litellm==1.49.1",
+    "dspy==2.5.32",
+    "dspy-ai==2.5.32",
+    "litellm==1.51.0",
 ]
 
 [dependency-groups]

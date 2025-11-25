@@ -18,6 +18,9 @@ from typing import ClassVar, List
 from PIL import Image
 import io
 from dspy.adapters.image_utils import Image as DSPyImage, encode_image
+import litellm
+
+litellm.cache = None
 
 #
 # Compatibility shim for DSPy + LiteLLM.
@@ -28,99 +31,100 @@ from dspy.adapters.image_utils import Image as DSPyImage, encode_image
 # `Router` without errors, while still delegating to the original Router
 # implementation under the hood.
 #
-try:
-    import litellm
-    import litellm.router as _litellm_router
-
-    # Patch Router to accept `retry_policy` if the installed LiteLLM is older.
-    _router = getattr(litellm, "Router", None)
-    if callable(_router):
-        router_sig = inspect.signature(_router)
-        if "retry_policy" not in router_sig.parameters:
-
-            class _RetryPolicy:
-                def __init__(self, **kwargs: Any) -> None:
-                    for key, value in kwargs.items():
-                        setattr(self, key, value)
-
-            BaseRouter = _router
-
-            class _PatchedRouter(BaseRouter):  # type: ignore[misc]
-                def __init__(
-                    self,
-                    *args: Any,
-                    retry_policy: Optional["_RetryPolicy"] = None,
-                    **kwargs: Any,
-                ) -> None:
-                    num_retries = kwargs.pop("num_retries", None)
-                    if num_retries is None and retry_policy is not None:
-                        retries = [
-                            getattr(retry_policy, "TimeoutErrorRetries", 0),
-                            getattr(retry_policy, "RateLimitErrorRetries", 0),
-                            getattr(
-                                retry_policy,
-                                "InternalServerErrorRetries",
-                                0,
-                            ),
-                        ]
-                        num_retries = max(retries) if any(retries) else 0
-
-                    kwargs.pop("retry_policy", None)
-                    super().__init__(*args, num_retries=num_retries or 0, **kwargs)
-
-                # Drop the `cache` kwarg that DSPy passes through Router into
-                # LiteLLM; the old LiteLLM version does not understand it and
-                # would forward it all the way to the OpenAI client.
-                def completion(
-                    self,
-                    model: str,
-                    messages: List[Dict[str, Any]],
-                    **kwargs: Any,
-                ):
-                    kwargs.pop("cache", None)
-                    return super().completion(model=model, messages=messages, **kwargs)
-
-                async def acompletion(
-                    self,
-                    model: str,
-                    messages: List[Dict[str, Any]],
-                    **kwargs: Any,
-                ):
-                    kwargs.pop("cache", None)
-                    return await super().acompletion(model=model, messages=messages, **kwargs)
-
-            litellm.Router = _PatchedRouter  # type: ignore[assignment]
-            _litellm_router.Router = _PatchedRouter
-            if not hasattr(_litellm_router, "RetryPolicy"):
-                _litellm_router.RetryPolicy = _RetryPolicy
-
-    # Patch caching so `from litellm.caching import Cache` (used by DSPy)
-    # works even on older LiteLLM versions that don't support the
-    # `disk_cache_dir` / `type=\"disk\"` API.
-    _OrigCache = getattr(litellm, "Cache", None)
-    if _OrigCache is not None and callable(_OrigCache):
-
-        class _CompatCache(_OrigCache):  # type: ignore[misc]
-            def __init__(
-                self,
-                *args: Any,
-                disk_cache_dir: Optional[str] = None,
-                type: str = "local",
-                **kwargs: Any,
-            ) -> None:
-                # Map new-style arguments onto the older Cache API.
-                kwargs.pop("disk_cache_dir", None)
-                cache_type = kwargs.pop("type", type)
-                if cache_type == "disk":
-                    cache_type = "local"
-                super().__init__(*args, type=cache_type, **kwargs)
-
-        caching_mod = types.ModuleType("litellm.caching")
-        caching_mod.Cache = _CompatCache
-        sys.modules["litellm.caching"] = caching_mod
-except Exception:
-    # If anything goes wrong, fall back to LiteLLM's default behavior.
-    pass
+# try:
+#     import litellm
+#     import litellm.router as _litellm_router
+#
+#     litellm.cache = None
+#     # Patch Router to accept `retry_policy` if the installed LiteLLM is older.
+#     _router = getattr(litellm, "Router", None)
+#     if callable(_router):
+#         router_sig = inspect.signature(_router)
+#         if "retry_policy" not in router_sig.parameters:
+#
+#             class _RetryPolicy:
+#                 def __init__(self, **kwargs: Any) -> None:
+#                     for key, value in kwargs.items():
+#                         setattr(self, key, value)
+#
+#             BaseRouter = _router
+#
+#             class _PatchedRouter(BaseRouter):  # type: ignore[misc]
+#                 def __init__(
+#                     self,
+#                     *args: Any,
+#                     retry_policy: Optional["_RetryPolicy"] = None,
+#                     **kwargs: Any,
+#                 ) -> None:
+#                     num_retries = kwargs.pop("num_retries", None)
+#                     if num_retries is None and retry_policy is not None:
+#                         retries = [
+#                             getattr(retry_policy, "TimeoutErrorRetries", 0),
+#                             getattr(retry_policy, "RateLimitErrorRetries", 0),
+#                             getattr(
+#                                 retry_policy,
+#                                 "InternalServerErrorRetries",
+#                                 0,
+#                             ),
+#                         ]
+#                         num_retries = max(retries) if any(retries) else 0
+#
+#                     kwargs.pop("retry_policy", None)
+#                     super().__init__(*args, num_retries=num_retries or 0, **kwargs)
+#
+#                 # Drop the `cache` kwarg that DSPy passes through Router into
+#                 # LiteLLM; the old LiteLLM version does not understand it and
+#                 # would forward it all the way to the OpenAI client.
+#                 def completion(
+#                     self,
+#                     model: str,
+#                     messages: List[Dict[str, Any]],
+#                     **kwargs: Any,
+#                 ):
+#                     kwargs.pop("cache", None)
+#                     return super().completion(model=model, messages=messages, **kwargs)
+#
+#                 async def acompletion(
+#                     self,
+#                     model: str,
+#                     messages: List[Dict[str, Any]],
+#                     **kwargs: Any,
+#                 ):
+#                     kwargs.pop("cache", None)
+#                     return await super().acompletion(model=model, messages=messages, **kwargs)
+#
+#             litellm.Router = _PatchedRouter  # type: ignore[assignment]
+#             _litellm_router.Router = _PatchedRouter
+#             if not hasattr(_litellm_router, "RetryPolicy"):
+#                 _litellm_router.RetryPolicy = _RetryPolicy
+#
+#     # Patch caching so `from litellm.caching import Cache` (used by DSPy)
+#     # works even on older LiteLLM versions that don't support the
+#     # `disk_cache_dir` / `type=\"disk\"` API.
+#     _OrigCache = getattr(litellm, "Cache", None)
+#     if _OrigCache is not None and callable(_OrigCache):
+#
+#         class _CompatCache(_OrigCache):  # type: ignore[misc]
+#             def __init__(
+#                 self,
+#                 *args: Any,
+#                 disk_cache_dir: Optional[str] = None,
+#                 type: str = "local",
+#                 **kwargs: Any,
+#             ) -> None:
+#                 # Map new-style arguments onto the older Cache API.
+#                 kwargs.pop("disk_cache_dir", None)
+#                 cache_type = kwargs.pop("type", type)
+#                 if cache_type == "disk":
+#                     cache_type = "local"
+#                 super().__init__(*args, type=cache_type, **kwargs)
+#
+#         caching_mod = types.ModuleType("litellm.caching")
+#         caching_mod.Cache = _CompatCache
+#         sys.modules["litellm.caching"] = caching_mod
+# except Exception:
+#     # If anything goes wrong, fall back to LiteLLM's default behavior.
+#     pass
 
 from ..agent import Agent
 from ..structs import FrameData, GameAction, GameState
@@ -138,7 +142,7 @@ import dspy
 
 def configure_llm(model: str = "openai/gpt-5.1") -> None:
     try:
-        lm = dspy.LM(model, cache=True)
+        lm = dspy.LM(model, cache=False)
         # dspy.settings.configure(lm=dspy.LM(model, cache=True))
         lm.kwargs.pop("max_tokens", None)
         lm.kwargs["max_completion_tokens"] = 4000
@@ -778,6 +782,32 @@ class SensiLLM(LLM):
 
         conn.commit()
 
+    def append_decision(self, card_id, game_id, turn_id,
+                        prev_action, prev_decision_type ):
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            INSERT INTO game (card_id,
+                              game_id,
+                              turn_id,
+                              prev_action,
+                              prev_decision_type)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                card_id,
+                game_id,
+                turn_id,
+                prev_action,
+                prev_decision_type,
+            ),
+        )
+
+        conn.commit()
+
     def parse_two_line_enums(self, s: str):
         lines = [ln.strip() for ln in s.strip().splitlines() if ln.strip()]
         if len(lines) < 2:
@@ -845,6 +875,7 @@ class SensiLLM(LLM):
             guesses=guesses,
             figured_out=figured_out,
         )
+        parsed = []
         try:
             # parsed = self.parse_two_line_enums(str(nextAction))
             dt = getattr(nextAction, "decision_type", "")
@@ -852,13 +883,13 @@ class SensiLLM(LLM):
             raw = f"{dt}\n{act}"
             parsed = self.parse_two_line_enums(raw)
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
+            self.append_decision(parsed["decision_type"], parsed["action"])
         except Exception as e:
             print("Parse error:", e)
 
         #---------- append player 2 output: action, decision ----
 
-
-        return action
+        return parsed["action"]
 
 class FrameDiffSignature(dspy.Signature):
     """
