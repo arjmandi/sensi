@@ -839,8 +839,9 @@ class SensiLLM(LLM):
             self.frame_diff = json.loads(diff_json_str)
         else:
             figured_out = ["RESET starts the game"]
-            self.append_observation(self.card_id,self.game_id, self.turn_id + 1,current_frame, self.frame_diff, None, figured_out)
-            self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
+            guesses = []
+            self.append_observation(self.card_id,self.game_id, self.turn_id + 1,current_frame, self.frame_diff, guesses, figured_out)
+            self.append_decision(self.card_id, self.game_id, self.turn_id+1, DecisionType.INFORMED.name, GameAction.RESET.name)
             return action #the first run, start the game
         logger.info("Sending to Assistant for action...")
 
