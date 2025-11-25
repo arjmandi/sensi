@@ -477,11 +477,11 @@ class SensiLLM(LLM):
         # cur.execute(
         #     "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS guesses (game_id TEXT, card_id TEXT, guess TEXT)")
+            "CREATE TABLE IF NOT EXISTS guesses (game_id TEXT, card_id TEXT, turn_id INT,guess TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, figs TEXT)")
+            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, turn_id INT,figs TEXT)")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, losing_seq TEXT)")
+            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, turn_id INT, losing_seq TEXT)")
         cur.execute(
             "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turn_id INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
 
@@ -555,7 +555,7 @@ class SensiLLM(LLM):
         # if game_row is None:
         #     raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
 
-        self.turn_id = game_row["turn_id"]
+        self.turn_id = game_row["turn_id"] + 1
         prev_frame_bytes = game_row["prev_frame"]
         if prev_frame_bytes:
             self.prev_frame = Image.open(io.BytesIO(prev_frame_bytes))
@@ -580,8 +580,9 @@ class SensiLLM(LLM):
             FROM guesses
             WHERE game_id = ?
                 AND card_id = ?
+                AND turn_id = ?
             """,
-            (game_id, card_id),
+            (game_id, card_id, game_row["turn_id"]),
         ).fetchall()
         self.prev_guesses = [r["guess"] for r in guesses_rows]
 
@@ -591,8 +592,9 @@ class SensiLLM(LLM):
             FROM figured_outs
             WHERE game_id = ?
                 AND card_id = ?
+                AND turn_id = ?
             """,
-            (game_id, card_id),
+            (game_id, card_id, game_row["turn_id"]),
         ).fetchall()
         self.prev_figured_out = [r["figs"] for r in figout_rows]
 
@@ -663,20 +665,20 @@ class SensiLLM(LLM):
         for guess in guesses:
             cur.execute(
                 """
-                INSERT INTO guesses (game_id, card_id, guess)
-                VALUES (?, ?, ?)
+                INSERT INTO guesses (game_id, card_id, turn_id, guess)
+                VALUES (?, ?, ?,?)
                 """,
-                (game_id, card_id, guess),
+                (game_id, card_id, turn_id, guess),
             )
 
         # Store new figured_out items
         for fig in figured_out:
             cur.execute(
                 """
-                INSERT INTO figured_outs (game_id, card_id, figs)
-                VALUES (?, ?, ?)
+                INSERT INTO figured_outs (game_id, card_id, turn_id, figs)
+                VALUES (?, ?, ?,?)
                 """,
-                (game_id, card_id, fig),
+                (game_id, card_id, turn_id, fig),
             )
 
         conn.commit()
@@ -732,6 +734,7 @@ class SensiLLM(LLM):
         # -------------------------------------- prepare inputs for observation  ------------------------------------
         current_frame = None
         if latest_frame.frame != []:
+            figured_out = []
             self.load_prev_state_for_player1( self.game_id, self.card_id)
             current_frame = self.grid_to_image(self.frames[-1].frame)
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
@@ -739,8 +742,8 @@ class SensiLLM(LLM):
         else:
             figured_out = ["RESET starts the game"]
             guesses = []
-            self.append_observation(self.card_id,self.game_id, self.turn_id + 1,current_frame, self.frame_diff, guesses, figured_out)
-            self.append_decision(self.card_id, self.game_id, self.turn_id+1, DecisionType.INFORMED.name, GameAction.RESET.name)
+            self.append_observation(self.card_id,self.game_id, self.turn_id ,current_frame, self.frame_diff, guesses, figured_out)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
             return action #the first run, start the game
         logger.info("Sending to Assistant for action...")
 
@@ -788,7 +791,7 @@ class SensiLLM(LLM):
             raw = f"{dt}\n{act}"
             parsed = self.parse_two_line_enums(raw)
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
-            self.append_decision(self.card_id, self.game_id, self.turn_id+1, parsed["decision_type"].name, parsed["action"].name)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["decision_type"].name, parsed["action"].name)
         except Exception as e:
             print("Parse error:", e)
 
