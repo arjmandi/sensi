@@ -470,18 +470,13 @@ class SensiLLM(LLM):
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
         cur = conn.cursor()
-        # cur.execute(
-        #     "CREATE TABLE IF NOT EXISTS guesses (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, guess TEXT)")
-        # cur.execute(
-        #     "CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
-        # cur.execute(
-        #     "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS guesses (
                 game_id TEXT, 
                 card_id TEXT, 
                 turn_id INT,
-                guess TEXT, 
+                gss TEXT, 
                 PRIMARY KEY (game_id, card_id, turn_id)
             )
         """)
@@ -591,19 +586,22 @@ class SensiLLM(LLM):
         ).fetchall()
         self.losing_sequences = [json.loads(r["losing_seq"]) for r in losing_rows]
 
-        guesses_rows = cur.execute(
+        guesses_row = cur.execute(
             """
-            SELECT guess
+            SELECT gss
             FROM guesses
             WHERE game_id = ?
                 AND card_id = ?
                 AND turn_id = ?
             """,
             (game_id, card_id, game_row["turn_id"]),
-        ).fetchall()
-        self.prev_guesses = [r["guess"] for r in guesses_rows]
+        ).fetchone()
+        self.prev_guesses = json.loads(guesses_row["gss"])
+        # self.prev_guesses = [r["guess"] for r in guesses_rows]
 
-        figout_rows = cur.execute(
+
+
+        figout_row = cur.execute(
             """
             SELECT figs
             FROM figured_outs
@@ -612,8 +610,10 @@ class SensiLLM(LLM):
                 AND turn_id = ?
             """,
             (game_id, card_id, game_row["turn_id"]),
-        ).fetchall()
-        self.prev_figured_out = [r["figs"] for r in figout_rows]
+        ).fetchone()
+        figured_out = json.loads(figout_row["figs"])
+        self.prev_figured_out = figured_out
+        # self.prev_figured_out = [r["figs"] for r in figout_rows]
 
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
         """
@@ -682,28 +682,30 @@ class SensiLLM(LLM):
             ),
         )
 
-        for guess in guesses:
-            cur.execute(
-                """
-                INSERT INTO guesses (game_id, card_id, turn_id, guess)
-                VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
-                UPDATE SET
-                    guess = excluded.guess
-                """,
-                (game_id, card_id, turn_id, guess),
-            )
+        # for guess in guesses:
+        gss_json = json.dumps(guesses)
+        cur.execute(
+            """
+            INSERT INTO guesses (game_id, card_id, turn_id, gss)
+            VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+            UPDATE SET
+                gss = excluded.gss
+            """,
+            (game_id, card_id, turn_id, gss_json),
+        )
 
         # Store new figured_out items
-        for fig in figured_out:
-            cur.execute(
-                """
-                INSERT INTO figured_outs (game_id, card_id, turn_id, figs)
-                VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
-                UPDATE SET
-                    figs = excluded.figs
-                """,
-                (game_id, card_id, turn_id, fig),
-            )
+        #for fig in figured_out:
+        figs_json = json.dumps(figured_out)
+        cur.execute(
+            """
+            INSERT INTO figured_outs (game_id, card_id, turn_id, figs)
+            VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+            UPDATE SET
+                figs = excluded.figs
+            """,
+            (game_id, card_id, turn_id, figs_json),
+        )
 
         conn.commit()
 
