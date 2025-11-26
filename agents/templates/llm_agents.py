@@ -566,8 +566,6 @@ class SensiLLM(LLM):
             (game_id, card_id),
         ).fetchone()
 
-        # if game_row is None:
-        #     raise ValueError(f"No game row for game_id={game_id}, card_id={card_id}")
 
         self.turn_id = game_row["turn_id"] + 1
         prev_frame_bytes = game_row["prev_frame"]
@@ -599,8 +597,6 @@ class SensiLLM(LLM):
             (game_id, card_id, game_row["turn_id"]),
         ).fetchone()
         self.prev_guesses = json.loads(guesses_row["gss"])
-        # self.prev_guesses = [r["guess"] for r in guesses_rows]
-
 
 
         figout_row = cur.execute(
@@ -615,7 +611,7 @@ class SensiLLM(LLM):
         ).fetchone()
         figured_out = json.loads(figout_row["figs"])
         self.prev_figured_out = figured_out
-        # self.prev_figured_out = [r["figs"] for r in figout_rows]
+
 
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
         """
@@ -687,7 +683,7 @@ class SensiLLM(LLM):
             ),
         )
 
-        # for guess in guesses:
+
         gss_json = json.dumps(guesses)
         cur.execute(
             """
@@ -699,7 +695,7 @@ class SensiLLM(LLM):
             (game_id, card_id, turn_id, gss_json),
         )
 
-        # Store new figured_out items
+
         figs_json = json.dumps(figured_out)
         cur.execute(
             """
@@ -802,6 +798,7 @@ class SensiLLM(LLM):
             card_id=self.card_id,
             game_id=self.game_id,
             turn_id=self.turn_id,
+            game_state=self.frames[-1].state.name,
             prev_frame_img=current_frame,
             frame_diff=self.frame_diff,
             guesses=guesses,
