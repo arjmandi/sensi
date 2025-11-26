@@ -463,6 +463,7 @@ class SensiLLM(LLM):
         self.prev_figured_out = []
         self.frame_diff_module = FrameDiffModule()
         self.turn_id = 0 #incremental id of each turn
+        self.game_state = GameState.NOT_PLAYED
         self.VALID_DT = {"GUESS", "INFORMED"}
         self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
         self.agent_db_name = "agent_state.db"
@@ -489,6 +490,7 @@ class SensiLLM(LLM):
                 card_id TEXT, 
                 game_id TEXT, 
                 turn_id INT, 
+                game_state TEXT,
                 prev_action TEXT, 
                 prev_decision_type TEXT, 
                 prev_frame BLOB, 
@@ -646,7 +648,7 @@ class SensiLLM(LLM):
         # `prediction.diff_json` is already a string (ideally valid JSON).
         return prediction.diff_json.strip()
 
-    def append_observation(self, card_id, game_id, turn_id,
+    def append_observation(self, card_id, game_id, turn_id, game_state,
                         prev_frame_img, frame_diff, guesses, figured_out):
         conn = sqlite3.connect(self.agent_db_name)
         conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
@@ -666,10 +668,12 @@ class SensiLLM(LLM):
             INSERT INTO game (card_id,
                               game_id,
                               turn_id,
+                              game_state,
                               prev_frame,
                               frame_diff)
-            VALUES (?, ?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
+            VALUES (?, ?, ? ,? , ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
             UPDATE SET 
+                game_state = excluded.game_state,
                 prev_frame = excluded.prev_frame,
                 frame_diff = excluded.frame_diff            
             """,
@@ -677,6 +681,7 @@ class SensiLLM(LLM):
                 card_id,
                 game_id,
                 turn_id,
+                game_state,
                 prev_frame_bytes,
                 frame_diff_str,
             ),
@@ -695,7 +700,6 @@ class SensiLLM(LLM):
         )
 
         # Store new figured_out items
-        #for fig in figured_out:
         figs_json = json.dumps(figured_out)
         cur.execute(
             """
@@ -771,7 +775,7 @@ class SensiLLM(LLM):
         else:
             figured_out = ["RESET starts the game"]
             guesses = []
-            self.append_observation(self.card_id,self.game_id, self.turn_id ,current_frame, self.frame_diff, guesses, figured_out)
+            self.append_observation(self.card_id,self.game_id, self.turn_id ,self.frames[-1].state,  current_frame, self.frame_diff, guesses, figured_out)
             self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
             return action #the first run, start the game
         logger.info("Sending to Assistant for action...")
