@@ -476,14 +476,31 @@ class SensiLLM(LLM):
         #     "CREATE TABLE IF NOT EXISTS figured_outs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, figs TEXT)")
         # cur.execute(
         #     "CREATE TABLE IF NOT EXISTS losing_actions_seqs (id INTEGER PRIMARY KEY, game_id TEXT, card_id TEXT, losing_seq TEXT)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS guesses (
+                game_id TEXT, 
+                card_id TEXT, 
+                turn_id INT,
+                guess TEXT, 
+                PRIMARY KEY (game_id, card_id, turn_id)
+            )
+        """)
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS guesses (game_id TEXT, card_id TEXT, turn_id INT,guess TEXT)")
+            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, turn_id INT,figs TEXT, PRIMARY KEY (game_id, card_id, turn_id)) ")
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, turn_id INT,figs TEXT)")
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, turn_id INT, losing_seq TEXT)")
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS game (card_id TEXT, game_id TEXT, turn_id INT, prev_action TEXT, prev_decision_type TEXT, prev_frame BLOB, frame_diff TEXT)")
+            "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, turn_id INT, losing_seq TEXT, PRIMARY KEY (game_id, card_id, turn_id))")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS game (
+                card_id TEXT, 
+                game_id TEXT, 
+                turn_id INT, 
+                prev_action TEXT, 
+                prev_decision_type TEXT, 
+                prev_frame BLOB, 
+                frame_diff TEXT, 
+                PRIMARY KEY (game_id, card_id, turn_id)
+            ) 
+        """)
 
     def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
@@ -651,7 +668,10 @@ class SensiLLM(LLM):
                               turn_id,
                               prev_frame,
                               frame_diff)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
+            UPDATE SET 
+                prev_frame = excluded.prev_frame,
+                frame_diff = excluded.frame_diff            
             """,
             (
                 card_id,
@@ -666,7 +686,9 @@ class SensiLLM(LLM):
             cur.execute(
                 """
                 INSERT INTO guesses (game_id, card_id, turn_id, guess)
-                VALUES (?, ?, ?,?)
+                VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+                UPDATE SET
+                    guess = excluded.guess
                 """,
                 (game_id, card_id, turn_id, guess),
             )
@@ -676,7 +698,9 @@ class SensiLLM(LLM):
             cur.execute(
                 """
                 INSERT INTO figured_outs (game_id, card_id, turn_id, figs)
-                VALUES (?, ?, ?,?)
+                VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+                UPDATE SET
+                    figs = excluded.figs
                 """,
                 (game_id, card_id, turn_id, fig),
             )
@@ -696,7 +720,10 @@ class SensiLLM(LLM):
                               turn_id,
                               prev_action,
                               prev_decision_type)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
+            UPDATE SET
+                prev_action = excluded.prev_action,
+                prev_decision_type = excluded.prev_decision_type
             """,
             (
                 card_id,
