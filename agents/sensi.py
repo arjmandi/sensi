@@ -36,43 +36,6 @@ class Sensi(Agent):
     def name(self) -> str:
         return f"{super().name}.{self.MAX_ACTIONS}"
 
-    # def is_done(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
-    #     """Decide if the agent is done playing or not."""
-    #     return any(
-    #         [
-    #             latest_frame.state is GameState.WIN,
-    #             # uncomment to only let the agent play one time
-    #             # latest_frame.state is GameState.GAME_OVER,
-    #         ] 
-    #     )
-
-    # def choose_action(
-    #     self, frames: list[FrameData], latest_frame: FrameData
-    # ) -> GameAction:
-    #     """Choose which action the Agent should take, fill in any arguments, and return it."""
-    #     if latest_frame.state in [GameState.NOT_PLAYED, GameState.GAME_OVER]:
-    #         # if game is not started (at init or after GAME_OVER) we need to reset
-    #         # add a small delay before resetting after GAME_OVER to avoid timeout
-    #         action = GameAction.RESET
-    #     else:
-    #         # else choose a random action that isnt reset
-    #         action = random.choice([a for a in GameAction if a is not GameAction.RESET])
-    #
-    #     if action.is_simple():
-    #         action.reasoning = f"RNG told me to pick {action.value}"
-    #     elif action.is_complex():
-    #         action.set_data(
-    #             {
-    #                 "x": random.randint(0, 63),
-    #                 "y": random.randint(0, 63),
-    #             }
-    #         )
-    #         action.reasoning = {
-    #             "desired_action": f"{action.value}",
-    #             "my_reason": "RNG said so!",
-    #         }
-    #     return action
-
 
 
 
@@ -80,14 +43,6 @@ class Sensi(Agent):
     def main(self) -> None:
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
-        # while (not self.is_done(self.frames, self.frames[-1])):
-        #     action = self.choose_action(self.frames, self.frames[-1])
-        #     if frame := self.take_action(action):
-        #         self.append_frame(frame)
-        #         logger.info(
-        #             f"{self.game_id} - {action.name}: count {self.action_counter}, score {frame.score}, avg fps {self.fps})"
-        #         )
-        #     self.action_counter += 1
         
         print("------------iiiiiiiiiiii--------------------------")
         print(self.frames[-1])
@@ -118,41 +73,12 @@ class Sensi(Agent):
     def is_playback(self) -> bool:
         return type(self) is Playback
 
-
-    # def start_recording(self) -> None:
-    #     filename = self.agent_name if self.is_playback else None
-    #     self.recorder = Recorder(prefix=self.name, filename=filename)
-    #     logger.info(
-    #         f"created new recording for {self.name} into {self.recorder.filename}"
-    #     )
-
     def append_frame(self, frame: FrameData) -> None:
         self.frames.append(frame)
         if frame.guid:
             self.guid = frame.guid
         if hasattr(self, "recorder") and not self.is_playback:
             self.recorder.record(json.loads(frame.model_dump_json()))
-
-    # def do_action_request(self, action: GameAction) -> Response:
-    #     data = action.action_data.model_dump()
-    #     if action == GameAction.RESET:
-    #         data["card_id"] = self.card_id
-    #     if self.guid:
-    #         data["guid"] = self.guid
-    #     if action.reasoning:
-    #         data["reasoning"] = action.reasoning
-    #     if self.game_id:
-    #         data["game_id"] = self.game_id
-    #
-    #     json_str = json.dumps(data)
-    #     r = self._session.post(
-    #         f"{self.ROOT_URL}/api/cmd/{action.name}",
-    #         json=json.loads(json_str),
-    #         headers=self.headers,
-    #     )
-    #     if "error" in r.json():
-    #         logger.warning(f"Exception during action request: {r.json()}")
-    #     return r
 
     def take_action(self, action: GameAction) -> Optional[FrameData]:
         """Submits the specific action and gets the next frame."""

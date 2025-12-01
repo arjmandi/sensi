@@ -20,7 +20,7 @@ litellm.cache = None
 
 
 from ..agent import Agent
-from ..structs import FrameData, GameAction, GameState
+from ..structs import FrameData, GameAction, GameState, Scorecard
 
 # Ensure DSPy/dsp cache stays inside the project workspace so we
 # don't rely on a writable home directory (important in sandboxed runs).
@@ -612,7 +612,6 @@ class SensiLLM(LLM):
         figured_out = json.loads(figout_row["figs"])
         self.prev_figured_out = figured_out
 
-
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
         """
         Uses DSPy + an LLM to describe differences between two game frames.
@@ -827,9 +826,45 @@ class SensiLLM(LLM):
             print("Parse error:", e)
 
         #---------- append player 2 output: action, decision ----
-
         action = parsed["action"]
+        self.losing_sequences.append(action)
         return action
+
+    def cleanup(self, scorecard: Optional[Scorecard] = None) -> None:
+        """Called after main loop is finished."""
+        if self._cleanup:
+            self._cleanup = False  # only cleanup once per agent
+
+            if self.frames[-1].state == GameState.GAME_OVER:
+                conn = sqlite3.connect(self.agent_db_name)
+                conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+                cur = conn.cursor()
+                ls_json = json.dumps(self.losing_sequences)
+                cur.execute(
+                    """
+                    INSERT INTO losing_actions_seqs (game_id, card_id, turn_id, losing_seq)
+                    VALUES (?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
+                    UPDATE SET
+                        losing_seq = excluded.losing_seq
+                    """,
+                    (self.game_id, self.card_id, self.turn_id, ls_json),
+                )
+
+            if hasattr(self, "recorder") and not self.is_playback:
+                if scorecard:
+                    self.recorder.record(scorecard.get(self.game_id))
+                else:
+                    scorecard_obj = self.get_scorecard()
+                    self.recorder.record(scorecard_obj.get(self.game_id))
+                logger.info(
+                    f"recording for {self.name} is available in {self.recorder.filename}"
+                )
+
+            logger.info(
+                    f"Finishing: agent took {self.action_counter} actions, took {self.seconds} seconds ({self.fps} average fps)"
+                )
+            if hasattr(self, "_session"):
+                self._session.close()
 
 class FrameDiffSignature(dspy.Signature):
     """
