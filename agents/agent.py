@@ -84,7 +84,8 @@ class Agent(ABC):
         while (
                 not self.is_won(self.frames, self.frames[-1])
         ):
-
+            if self.frames[-1].frame and len(self.frames[-1].frame[0]) > 64:
+                self.state = GameState.GAME_OVER
             action = self.choose_action(self.frames, self.frames[-1])
             if frame := self.take_action(action):
                 self.append_frame(frame)
