@@ -70,7 +70,7 @@ class LLM(Agent):
         super().__init__(*args, **kwargs)
         self.messages = []
         self.token_counter = 0
-        self.game_sate = GameState.NOT_PLAYED
+        self.game_state = GameState.NOT_PLAYED
 
     @property
     def name(self) -> str:
