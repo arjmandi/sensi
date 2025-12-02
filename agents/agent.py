@@ -80,7 +80,7 @@ class Agent(ABC):
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
         while (
-                not self.is_won(self.frames, self.frames[-1])
+                not self.is_won(self.frames, self.frames[-1]) and not self.game_sate == GameState.GAME_OVER
         ):
             if self.frames[-1].frame and len(self.frames[-1].frame[0]) > 64:
                 self.game_sate = GameState.GAME_OVER

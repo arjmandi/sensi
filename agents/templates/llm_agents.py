@@ -84,7 +84,8 @@ class LLM(Agent):
         """Decide if the agent is done playing or not."""
         return any(
             [
-                latest_frame.state is GameState.WIN,
+                # latest_frame.state is GameState.WIN,
+                self.game_sate is GameState.WIN,
             ]
         )
 
@@ -537,6 +538,9 @@ class SensiLLM(LLM):
         (image.width * scale, image.height * scale),
             resample=Image.NEAREST  # keep the pixel-art look
         )
+        if big_img.width > 640:
+            self.game_sate = GameState.GAME_OVER
+
         return big_img
 
     def load_prev_state_for_player1(self, game_id: str, card_id: str):
@@ -824,7 +828,7 @@ class SensiLLM(LLM):
         if self._cleanup:
             self._cleanup = False  # only cleanup once per agent
 
-            if self.frames[-1].state == GameState.GAME_OVER:
+            if self.game_sate == GameState.GAME_OVER:
                 conn = sqlite3.connect(self.agent_db_name)
                 conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
                 cur = conn.cursor()
