@@ -450,6 +450,7 @@ class SensiLLM(LLM):
         self.prev_action = GameAction.RESET
         self.frame_diff = None
         self.losing_sequences = []
+        self.current_sequence = []
         self.prev_guesses = []
         self.prev_figured_out = []
         self.frame_diff_module = FrameDiffModule()
@@ -821,7 +822,7 @@ class SensiLLM(LLM):
 
         #---------- append player 2 output: action, decision ----
         action = parsed["action"]
-        self.losing_sequences.append(action.name)
+        self.current_sequence.append(action.name)
         return action
 
     def cleanup(self, scorecard: Optional[Scorecard] = None) -> None:
@@ -833,6 +834,7 @@ class SensiLLM(LLM):
                 conn = sqlite3.connect(self.agent_db_name)
                 conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
                 cur = conn.cursor()
+                self.losing_sequences.append(self.current_sequence)
                 ls_json = json.dumps(self.losing_sequences)
                 cur.execute(
                     """
