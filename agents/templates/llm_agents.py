@@ -25,14 +25,7 @@ from ..structs import FrameData, GameAction, GameState, Scorecard
 # Ensure DSPy/dsp cache stays inside the project workspace so we
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
-
 import dspy
-
-
-# --------------------------------------------------------------------------------------
-# Optional: Configure your LM once here (or do it in your app bootstrap)
-# --------------------------------------------------------------------------------------
-
 def configure_llm(model: str = "openai/gpt-5.1") -> None:
     try:
         lm = dspy.LM(model, cache=False)
@@ -47,9 +40,7 @@ def configure_llm(model: str = "openai/gpt-5.1") -> None:
 
 # Call this on import by default (safe if configured elsewhere).
 configure_llm()
-
 logger = logging.getLogger()
-
 
 class LLM(Agent):
     """An agent that uses a base LLM model to play games."""
@@ -423,12 +414,6 @@ Call exactly one action.
                 }
                 self.recorder.record(meta)
         super().cleanup(*args, **kwargs)
-
-
-# --------------------------------------------------------------------------------------
-# Structured output for the update step
-# --------------------------------------------------------------------------------------
-
 
 class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
