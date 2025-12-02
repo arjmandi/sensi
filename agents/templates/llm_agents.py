@@ -539,8 +539,8 @@ class SensiLLM(LLM):
         )
         if big_img.width > 640: #frame size change means we've either lost or won
             self.game_state = GameState.GAME_OVER
-            if self.frames[-1].score > self.score_counter: #we're not sure if the score change happens and detectable here
-                self.game_state = GameState.WIN
+            if self.frames[-1].score > self.score_counter:
+                # self.game_state = GameState.WIN # we comment this to prevent from breaking playing after a level win
                 self.score_counter = self.frames[-1].score
 
         return big_img
