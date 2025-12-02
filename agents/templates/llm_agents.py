@@ -85,8 +85,6 @@ class LLM(Agent):
         return any(
             [
                 latest_frame.state is GameState.WIN,
-                # uncomment below to only let the agent play one time
-                # latest_frame.state is GameState.GAME_OVER,
             ]
         )
 
@@ -269,16 +267,7 @@ class LLM(Agent):
                 }
             )
         logger.info(f"Received {tokens} tokens, new total {self.token_counter}")
-        # handle tool to debug messages:
-        # with open("messages.json", "w") as f:
-        #     json.dump(
-        #         [
-        #             msg if isinstance(msg, dict) else msg.model_dump()
-        #             for msg in self.messages
-        #         ],
-        #         f,
-        #         indent=2,
-        #     )
+
 
     def push_message(self, message: dict[str, Any]) -> list[dict[str, Any]]:
         """Push a message onto stack, store up to MESSAGE_LIMIT with FIFO."""

@@ -31,6 +31,7 @@ class Agent(ABC):
 
     timer: float = 0
     agent_name: str
+    game_sate: GameState
     card_id: str
     game_id: str
     guid: str
@@ -62,6 +63,7 @@ class Agent(ABC):
         self.tags = tags or []
         self.frames = [FrameData(score=0)]
         self._cleanup = True
+        self.game_sate = GameState.NOT_PLAYED
         if record:
             self.start_recording()
         self.headers = {
@@ -77,15 +79,11 @@ class Agent(ABC):
     def main(self) -> None:
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
-        # while (
-        #     not self.is_won(self.frames, self.frames[-1])
-        #     and self.action_counter <= self.MAX_ACTIONS
-        # ):
         while (
                 not self.is_won(self.frames, self.frames[-1])
         ):
             if self.frames[-1].frame and len(self.frames[-1].frame[0]) > 64:
-                self.state = GameState.GAME_OVER
+                self.game_sate = GameState.GAME_OVER
             action = self.choose_action(self.frames, self.frames[-1])
             if frame := self.take_action(action):
                 self.append_frame(frame)
