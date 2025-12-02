@@ -70,6 +70,7 @@ class LLM(Agent):
         super().__init__(*args, **kwargs)
         self.messages = []
         self.token_counter = 0
+        self.game_sate = GameState.NOT_PLAYED
 
     @property
     def name(self) -> str:
@@ -85,7 +86,7 @@ class LLM(Agent):
         return any(
             [
                 # latest_frame.state is GameState.WIN,
-                self.game_sate is GameState.WIN,
+                self.game_state is GameState.WIN,
             ]
         )
 
@@ -539,7 +540,7 @@ class SensiLLM(LLM):
             resample=Image.NEAREST  # keep the pixel-art look
         )
         if big_img.width > 640:
-            self.game_sate = GameState.GAME_OVER
+            self.game_state = GameState.GAME_OVER
 
         return big_img
 
@@ -820,7 +821,7 @@ class SensiLLM(LLM):
 
         #---------- append player 2 output: action, decision ----
         action = parsed["action"]
-        self.losing_sequences.append(action)
+        self.losing_sequences.append(action.name)
         return action
 
     def cleanup(self, scorecard: Optional[Scorecard] = None) -> None:
@@ -828,7 +829,7 @@ class SensiLLM(LLM):
         if self._cleanup:
             self._cleanup = False  # only cleanup once per agent
 
-            if self.game_sate == GameState.GAME_OVER:
+            if self.game_state == GameState.GAME_OVER:
                 conn = sqlite3.connect(self.agent_db_name)
                 conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
                 cur = conn.cursor()
