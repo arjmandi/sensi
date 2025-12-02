@@ -845,6 +845,7 @@ class SensiLLM(LLM):
                     """,
                     (self.game_id, self.card_id, self.turn_id, ls_json),
                 )
+                conn.commit()
 
             if hasattr(self, "recorder") and not self.is_playback:
                 if scorecard:
