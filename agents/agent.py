@@ -80,10 +80,8 @@ class Agent(ABC):
         """The main agent loop. Play the game_id until finished, then exits."""
         self.timer = time.time()
         while (
-                not self.is_won(self.frames, self.frames[-1]) and not self.game_state == GameState.GAME_OVER
+                not self.is_won(self.frames, self.frames[-1])
         ):
-            # if self.frames[-1].frame and len(self.frames[-1].frame[0]) > 64:
-            #     self.game_state = GameState.GAME_OVER
             action = self.choose_action(self.frames, self.frames[-1])
             if frame := self.take_action(action):
                 self.append_frame(frame)
@@ -206,7 +204,9 @@ class Agent(ABC):
     @abstractmethod
     def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if game is won or not."""
-        return True if self.frames[-1].state == GameState.WIN else False
+        # return True if self.frames[-1].state == GameState.WIN else False
+        return True if not self.game_state == GameState.GAME_OVER else False
+
 
     @abstractmethod
     def choose_action(

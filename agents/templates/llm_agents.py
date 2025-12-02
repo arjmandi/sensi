@@ -63,6 +63,7 @@ class LLM(Agent):
     MODEL: str = "gpt-4o-mini"
     messages: list[dict[str, Any]]
     token_counter: int
+    score_counter: int
 
     _latest_tool_call_id: str = "call_12345"
 
@@ -83,12 +84,8 @@ class LLM(Agent):
 
     def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
         """Decide if the agent is done playing or not."""
-        return any(
-            [
-                # latest_frame.state is GameState.WIN,
-                self.game_state is GameState.WIN,
-            ]
-        )
+        return True if self.game_state == GameState.WIN else False
+
 
     def choose_action(
         self, frames: list[FrameData], latest_frame: FrameData
@@ -540,8 +537,11 @@ class SensiLLM(LLM):
         (image.width * scale, image.height * scale),
             resample=Image.NEAREST  # keep the pixel-art look
         )
-        if big_img.width > 640:
+        if big_img.width > 640: #frame size change means we've either lost or won
             self.game_state = GameState.GAME_OVER
+            if self.frames[-1].score > self.score_counter: #we're not sure if the score change happens and detectable here
+                self.game_state = GameState.WIN
+                self.score_counter = self.frames[-1].score
 
         return big_img
 
@@ -762,9 +762,10 @@ class SensiLLM(LLM):
             current_frame = self.grid_to_image(self.frames[-1].frame)
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
             self.frame_diff = json.loads(diff_json_str)
-        else:
+        else: # start of the play
             figured_out = ["RESET starts the game"]
             guesses = []
+            self.score_counter = self.frames[-1].score
             self.append_observation(self.card_id,self.game_id, self.turn_id ,self.frames[-1].state,  current_frame, self.frame_diff, guesses, figured_out)
             self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
             return action #the first run, start the game
@@ -810,7 +811,6 @@ class SensiLLM(LLM):
 
         parsed = []
         try:
-            # parsed = self.parse_two_line_enums(str(nextAction))
             dt = getattr(nextAction, "decision_type", "")
             act = getattr(nextAction, "action", "")
             raw = f"{dt}\n{act}"

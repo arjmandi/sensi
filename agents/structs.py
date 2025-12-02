@@ -14,6 +14,7 @@ class GameState(str, Enum):
     GAME_OVER = "GAME_OVER"
 
 
+
 class Card(BaseModel):
     """
     A single scorecard for a single game. A game can be played more than
