@@ -32,7 +32,14 @@ r1: if the agent is in tool discovery, it must be able to update the description
 - we're ignoring available actions from the function response
 - 
 
-
+## important design questions
+- when do we decide to put some part of the logic in code, or in the prompt and the line of reasoning?
+  - the way we did it previously was that we've abstracted away how to play the game and kept experiences outside the reasoning. 
+  - regarding specifically scores, I'm still not sure how to model it:
+    - doesn't give away strong signals of winning but to validate guesses about the game
+      - so one design change that comes to mind is break down guesses and figured outs into what each action does? how the game is won? then add the score and monitor the score on level change to add this distinction
+- 
+- 
 
 
 
