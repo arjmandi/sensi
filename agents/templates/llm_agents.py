@@ -925,7 +925,7 @@ class Player1(dspy.Signature):
     Most reliably, a game can be won while in stage 4, but some games can be won in stages 3, 2, or even 1 due to being lucky and guessing the right thing early.
 
     Player 1 (you), in each turn receives:
-    1. A snapshot of the screen as the current frame: [row][column][color code]
+    1. A snapshot of the screen as the current frame: a photo
     2. Previous frame in the same format
     3. Previous type of decision Player 2 has done: GUESS or INFORMED
     4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
