@@ -30,4 +30,11 @@ r1: if the agent is in tool discovery, it must be able to update the description
   - regarding specifically scores, I'm still not sure how to model it:
     - doesn't give away strong signals of winning but to validate guesses about the game
       - so one design change that comes to mind is break down guesses and figured outs into what each action does? how the game is won? then add the score and monitor the score on level change to add this distinction
--
+- should we separate learning of an action from learning the winning? -> it reduced to experiment if figured out items can actually lead to intentional win
+
+
+
+
+
+level 1
+["RESET starts the game", "blue platform (with red top) is our player", "we can move the player in the teal area - red area is not reachable", "ACTION1 moves the player 1 pixel up", "ACTION2 moves the player 1 pixel down", "ACTION3 moves the player 1 pixel left", "ACTION4 moves the player 1 pixel right", "other actions are not needed","each action consumes 1 unit of energy if moves the player, units of energy are show on the top as dots, white means remained energy, teal means consumed energy", "if all dots go teal we can't move and game over", "shape in the middle with blue dot and black wings is the key generator", "the shape in the middle higher than the key generaotr is a door. the purple square with the key shape", "the shape in the left button corner is our current key", "when we pass over the key generator it generates a new key", "we must pass over the key generator until it generates a key matching to the door"]
