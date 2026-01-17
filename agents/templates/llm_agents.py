@@ -461,17 +461,46 @@ class SensiLLM(LLM):
             "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, turn_id INT, losing_seq TEXT, PRIMARY KEY (game_id, card_id, turn_id))")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS game (
-                card_id TEXT, 
-                game_id TEXT, 
-                turn_id INT, 
+                card_id TEXT,
+                game_id TEXT,
+                turn_id INT,
                 game_state TEXT,
-                prev_action TEXT, 
-                prev_decision_type TEXT, 
-                prev_frame BLOB, 
-                frame_diff TEXT, 
+                prev_action TEXT,
+                prev_decision_type TEXT,
+                prev_frame BLOB,
+                frame_diff TEXT,
                 PRIMARY KEY (game_id, card_id, turn_id)
-            ) 
+            )
         """)
+
+        # V2: items_to_learn table - stores learning items with state machine and scoring
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS items_to_learn (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id TEXT,
+                card_id TEXT,
+                item_name TEXT NOT NULL,
+                state TEXT DEFAULT 'not_reached',
+                learning_metric TEXT,
+                threshold INTEGER DEFAULT 8,
+                current_sense_score INTEGER,
+                UNIQUE(game_id, card_id, item_name)
+            )
+        """)
+
+        # V2: inputs table - key-value store for frame data, game state, etc.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS inputs (
+                game_id TEXT,
+                card_id TEXT,
+                turn_id INTEGER,
+                key TEXT,
+                value TEXT,
+                PRIMARY KEY (game_id, card_id, turn_id, key)
+            )
+        """)
+
+        conn.commit()
 
     def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
@@ -591,6 +620,134 @@ class SensiLLM(LLM):
         ).fetchone()
         figured_out = json.loads(figout_row["figs"])
         self.prev_figured_out = figured_out
+
+    # ==================== V2 Helper Methods ====================
+
+    def get_current_item_to_learn(self, game_id: str, card_id: str) -> Optional[dict]:
+        """
+        Returns the current learning item, or None if all items are facts.
+        Priority: 1) item with state='learning', 2) first item with state='not_reached'
+        """
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # First, check for an item already in 'learning' state
+        learning_row = cur.execute(
+            """
+            SELECT id, item_name, state, learning_metric, threshold, current_sense_score
+            FROM items_to_learn
+            WHERE game_id = ? AND card_id = ? AND state = 'learning'
+            LIMIT 1
+            """,
+            (game_id, card_id),
+        ).fetchone()
+
+        if learning_row:
+            conn.close()
+            return dict(learning_row)
+
+        # Otherwise, get the first 'not_reached' item
+        not_reached_row = cur.execute(
+            """
+            SELECT id, item_name, state, learning_metric, threshold, current_sense_score
+            FROM items_to_learn
+            WHERE game_id = ? AND card_id = ? AND state = 'not_reached'
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (game_id, card_id),
+        ).fetchone()
+
+        conn.close()
+        if not_reached_row:
+            return dict(not_reached_row)
+        return None
+
+    def update_item_state(self, item_id: int, state: str = None,
+                          metric: str = None, sense_score: int = None) -> None:
+        """Update learning item state, metric, or sense_score."""
+        conn = sqlite3.connect(self.agent_db_name)
+        cur = conn.cursor()
+
+        updates = []
+        values = []
+        if state is not None:
+            updates.append("state = ?")
+            values.append(state)
+        if metric is not None:
+            updates.append("learning_metric = ?")
+            values.append(metric)
+        if sense_score is not None:
+            updates.append("current_sense_score = ?")
+            values.append(sense_score)
+
+        if updates:
+            values.append(item_id)
+            cur.execute(
+                f"UPDATE items_to_learn SET {', '.join(updates)} WHERE id = ?",
+                tuple(values),
+            )
+            conn.commit()
+        conn.close()
+
+    def get_facts(self, game_id: str, card_id: str) -> List[str]:
+        """Return list of item_names where state='fact'."""
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        rows = cur.execute(
+            """
+            SELECT item_name
+            FROM items_to_learn
+            WHERE game_id = ? AND card_id = ? AND state = 'fact'
+            ORDER BY id ASC
+            """,
+            (game_id, card_id),
+        ).fetchall()
+
+        conn.close()
+        return [row["item_name"] for row in rows]
+
+    def store_input(self, game_id: str, card_id: str, turn_id: int,
+                    key: str, value: Any) -> None:
+        """Store a key-value input for this turn."""
+        conn = sqlite3.connect(self.agent_db_name)
+        cur = conn.cursor()
+
+        value_json = json.dumps(value)
+        cur.execute(
+            """
+            INSERT INTO inputs (game_id, card_id, turn_id, key, value)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(game_id, card_id, turn_id, key) DO UPDATE SET
+                value = excluded.value
+            """,
+            (game_id, card_id, turn_id, key, value_json),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_inputs(self, game_id: str, card_id: str, turn_id: int) -> dict:
+        """Get all inputs for this turn as a dict."""
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        rows = cur.execute(
+            """
+            SELECT key, value
+            FROM inputs
+            WHERE game_id = ? AND card_id = ? AND turn_id = ?
+            """,
+            (game_id, card_id, turn_id),
+        ).fetchall()
+
+        conn.close()
+        return {row["key"]: json.loads(row["value"]) for row in rows}
+
+    # ==================== End V2 Helper Methods ====================
 
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
         """
@@ -739,38 +896,105 @@ class SensiLLM(LLM):
         """Choose which action the Agent should take, fill in any arguments, and return it."""
         action = GameAction.RESET  # default action if LLM doesnt call one
 
-        # -------------------------------------- prepare inputs for observation  ------------------------------------
+        # ==================== 1. FIRST FRAME CHECK (existing) ====================
         current_frame = None
         if latest_frame.frame != []:
             figured_out = []
-            self.load_prev_state_for_player1( self.game_id, self.card_id)
+            self.load_prev_state_for_player1(self.game_id, self.card_id)
             current_frame = self.grid_to_image(self.frames[-1].frame)
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
             self.frame_diff = json.loads(diff_json_str)
-        else: # start of the play
+        else:  # start of the play
             figured_out = ["RESET starts the game"]
             guesses = []
             self.score_counter = self.frames[-1].score
-            self.append_observation(self.card_id,self.game_id, self.turn_id ,self.frames[-1].state,  current_frame, self.frame_diff, guesses, figured_out)
+            self.append_observation(self.card_id, self.game_id, self.turn_id, self.frames[-1].state, current_frame, self.frame_diff, guesses, figured_out)
             self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
-            return action #the first run, start the game
+            return action  # the first run, start the game
+
         logger.info("Sending to Assistant for action...")
 
-        #---------- player1 observes the game and previous step----
+        # ==================== 3. STORE INPUTS (NEW) ====================
+        # Store key-value inputs for this turn
+        self.store_input(self.game_id, self.card_id, self.turn_id, "game_state", self.frames[-1].state.name)
+        self.store_input(self.game_id, self.card_id, self.turn_id, "prev_action", self.prev_action)
+        self.store_input(self.game_id, self.card_id, self.turn_id, "prev_decision_type", self.prev_decision_type)
+        self.store_input(self.game_id, self.card_id, self.turn_id, "frame_diff", self.frame_diff)
+
+        # ==================== 4. LEARNING EVALUATION (NEW) ====================
+        # Get the current item to learn
+        current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
+        current_item_name = ""
+        facts = self.get_facts(self.game_id, self.card_id)
+
+        if current_item is not None:
+            current_item_name = current_item["item_name"]
+
+            # Mark as 'learning' if it was 'not_reached'
+            if current_item["state"] == "not_reached":
+                self.update_item_state(current_item["id"], state="learning")
+                logger.info(f"Started learning item: {current_item_name}")
+
+            # Generate metric if missing
+            if current_item["learning_metric"] is None:
+                logger.info(f"Generating learning metric for: {current_item_name}")
+                metric_gen = dspy.Predict(MetricGeneratorSignature)
+                metric_result = metric_gen(item_to_learn=current_item_name)
+                learning_metric = getattr(metric_result, "learning_metric", "")
+                self.update_item_state(current_item["id"], metric=learning_metric)
+                logger.info(f"Generated metric: {learning_metric}")
+                # Don't score yet on this turn, proceed to Player1/2
+            else:
+                # Has metric, evaluate sense score
+                logger.info(f"Evaluating sense score for: {current_item_name}")
+                inputs_dict = self.get_inputs(self.game_id, self.card_id, self.turn_id)
+
+                sense_scorer = dspy.Predict(SenseScorerSignature)
+                score_result = sense_scorer(
+                    item_to_learn=current_item_name,
+                    learning_metric=current_item["learning_metric"],
+                    facts=facts,
+                    figured_out=self.prev_figured_out,
+                    inputs=inputs_dict,
+                )
+
+                sense_score = int(getattr(score_result, "sense_score", 0))
+                reasoning = getattr(score_result, "reasoning", "")
+                self.update_item_state(current_item["id"], sense_score=sense_score)
+                logger.info(f"Sense score for '{current_item_name}': {sense_score}/10 - {reasoning}")
+
+                # Check if threshold is met
+                threshold = current_item["threshold"] or 8
+                if sense_score >= threshold:
+                    self.update_item_state(current_item["id"], state="fact")
+                    logger.info(f"Item '{current_item_name}' marked as FACT (score {sense_score} >= threshold {threshold})")
+                    # Get next item to learn
+                    facts = self.get_facts(self.game_id, self.card_id)
+                    current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
+                    current_item_name = current_item["item_name"] if current_item else ""
+                    if current_item and current_item["state"] == "not_reached":
+                        self.update_item_state(current_item["id"], state="learning")
+        else:
+            logger.info("All items learned! No current learning target.")
+
+        # ==================== 5. PLAYER 1 - OBSERVER (modified) ====================
         player1 = dspy.Predict(Player1)
         observations = player1(
             current_frame=current_frame,
-            prev_frame = self.prev_frame,
-            prev_decision_type = self.prev_decision_type,
-            prev_action = self.prev_action,
-            frame_diff = self.frame_diff,
-            losing_sequences = self.losing_sequences,
-            prev_guesses = self.prev_guesses,
-            prev_figured_out = self.prev_figured_out,
-            guidelines = Player1.PLAYER1_GUIDELINES,
+            prev_frame=self.prev_frame,
+            prev_decision_type=self.prev_decision_type,
+            prev_action=self.prev_action,
+            frame_diff=self.frame_diff,
+            losing_sequences=self.losing_sequences,
+            prev_guesses=self.prev_guesses,
+            prev_figured_out=self.prev_figured_out,
+            guidelines=Player1.PLAYER1_GUIDELINES,
+            # V2 new inputs
+            facts=facts,
+            current_item_to_learn=current_item_name,
         )
 
-        #---------- append player1 output: the observation turn++ ----
+        # Append player1 output
         guesses = getattr(observations, "guesses", []) or []
         figured_out = getattr(observations, "figured_out", []) or []
         self.append_observation(
@@ -784,12 +1008,17 @@ class SensiLLM(LLM):
             figured_out=figured_out,
         )
 
+        # ==================== 6. PLAYER 2 - ACTOR (modified) ====================
+        inputs_dict = self.get_inputs(self.game_id, self.card_id, self.turn_id)
 
-        #---------- call the player 2 ----
         player2 = dspy.Predict(Player2)
         nextAction = player2(
             guesses=guesses,
             figured_out=figured_out,
+            # V2 new inputs
+            facts=facts,
+            current_item_to_learn=current_item_name,
+            inputs=inputs_dict,
         )
 
         parsed = []
@@ -803,7 +1032,7 @@ class SensiLLM(LLM):
         except Exception as e:
             print("Parse error:", e)
 
-        #---------- append player 2 output: action, decision ----
+        # ==================== 7. RETURN ACTION (existing) ====================
         action = parsed["action"]
         self.current_sequence.append(action.name)
         return action
@@ -900,6 +1129,68 @@ class FrameDiffModule(dspy.Module):
         """
         return self._predict(prev_frame=prev_frame, current_frame=current_frame)
 
+
+# ==================== V2 DSPy Signatures ====================
+
+class MetricGeneratorSignature(dspy.Signature):
+    """
+    Given an item the agent needs to learn about a game environment,
+    generate a metric to verify that the item has been learned.
+
+    Think about:
+    - What observations would confirm understanding?
+    - What test actions could validate the learning?
+    - What patterns in game feedback would indicate mastery?
+    """
+
+    item_to_learn: str = dspy.InputField(
+        desc="The item/concept the agent needs to learn about the game"
+    )
+
+    learning_metric: str = dspy.OutputField(
+        desc="A clear description of how to verify that this item has been learned. "
+             "What observations or outcomes would confirm understanding?"
+    )
+
+
+class SenseScorerSignature(dspy.Signature):
+    """
+    Score the agent's understanding of a learning item from 1 to 10.
+
+    Scoring guide:
+    - 1-3: No/minimal understanding
+    - 4-6: Partial understanding, still exploring
+    - 7-8: Good understanding, some gaps
+    - 9-10: Complete understanding, can apply reliably
+    """
+
+    item_to_learn: str = dspy.InputField(
+        desc="The item/concept being evaluated"
+    )
+    learning_metric: str = dspy.InputField(
+        desc="The criteria for verifying learning"
+    )
+    facts: List[str] = dspy.InputField(
+        desc="Confirmed facts from previously learned items"
+    )
+    figured_out: List[str] = dspy.InputField(
+        desc="Things Player1 has figured out through gameplay"
+    )
+    inputs: dict = dspy.InputField(
+        desc="Current game inputs (frame_summary, game_state, prev_action, etc.)"
+    )
+
+    sense_score: int = dspy.OutputField(
+        desc="Score from 1-10 indicating learning progress"
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Brief explanation for the score"
+    )
+
+
+# ==================== End V2 DSPy Signatures ====================
+
+
 class DecisionType(Enum):
     GUESS = 0
     INFORMED = 1
@@ -920,7 +1211,7 @@ class Player1(dspy.Signature):
     stage 1: when we have no guess, no clue what each action does.
     stage 2: once we figure out the actions and a little about the game environment.
     stage 3: we have a lot of guesses about the game environment and some guesses on how to win.
-    stage 4: we’ve figured out the actions, we’ve figured out the environment, and we’ve figured out how to win.
+    stage 4: we've figured out the actions, we've figured out the environment, and we've figured out how to win.
 
     Most reliably, a game can be won while in stage 4, but some games can be won in stages 3, 2, or even 1 due to being lucky and guessing the right thing early.
 
@@ -931,6 +1222,8 @@ class Player1(dspy.Signature):
     4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
     5. Diff of frames to help identify changed areas
     6. Losing action sequences: list of sequences of actions that led to game over in previous attempts
+    7. Facts: items your team has definitively learned and confirmed
+    8. Current item to learn: the specific item you are currently focused on learning
 
     You, Player 1, populate the "guesses" list and "figured_out" list as below:
     1. Develop guesses by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
@@ -940,6 +1233,7 @@ class Player1(dspy.Signature):
          3) previous guesses
          4) previous figured_out things
          5) previous sequences that led to game over
+         6) the current item to learn (focus your guesses toward understanding this)
        Then write simple guesses.
     2. Write all guesses you can make. For example, if you guess an area of the screen is showing a character, if there's a point counter, if there's a timer, etc. Be creative about guesses.
     3. If, based on the last action, you have figured out what each action does, move guesses about that to the "figured_out" list. Write them as simple actions. For example, "ACTION1 jumps over things".
@@ -957,9 +1251,12 @@ class Player1(dspy.Signature):
     10. Remove things you deem unlikely to make you lose from the "guesses" list.
     11. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
 
-    You can only communicate with Player 2 through these lists. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop “figured_out” items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher stages of confidence.
+    You can only communicate with Player 2 through these lists. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop "figured_out" items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher stages of confidence.
 
-    So help him with smart “guesses” and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
+    So help him with smart "guesses" and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
+
+    IMPORTANT: You have access to "facts" - these are items your team has definitively learned and confirmed through the learning system.
+    Use the facts to inform your analysis, but focus your guesses and observations toward understanding the current item to learn.
     """).strip()
 
     # --- Inputs ---
@@ -973,6 +1270,14 @@ class Player1(dspy.Signature):
     prev_figured_out = dspy.InputField()
     guidelines = dspy.InputField()
 
+    # --- V2 New Inputs ---
+    facts: List[str] = dspy.InputField(
+        desc="Confirmed facts from items marked as learned through the learning system"
+    )
+    current_item_to_learn: str = dspy.InputField(
+        desc="The specific item currently being learned - focus guesses toward this"
+    )
+
     # --- Outputs ---
     guesses: List[str] = dspy.OutputField(
         desc="A Python list of guess strings, e.g. ['maybe ACTION1 jumps', ...]"
@@ -982,7 +1287,7 @@ class Player1(dspy.Signature):
     )
 
 class Player2(dspy.Signature):
-    """ Given the input guesses and figured out items, provide and action.
+    """ Given the input guesses and figured out items, provide an action to make sense of the current item to learn.
      Follow the provided guidelines strictly.  Output EXACTLY two lines, no extra text:
     line1: decision type enum (GUESS or INFORMED)
     line2: action enum (RESET|ACTION1|ACTION2|ACTION3|ACTION4|ACTION5|ACTION6|ACTION7)
@@ -1006,19 +1311,22 @@ class Player2(dspy.Signature):
     You, Player 2, play the game using:
     1. The "guesses" from Player 1
     2. The "figured_out" things from Player 1
-    3. Your stage of confidence
+    3. The "facts" - confirmed learnings from items your team has definitively learned
+    4. The current item to learn - your current learning target
+    5. The game inputs (frame data, game state, etc.)
+    6. Your stage of confidence
 
     Usually, we have 4 stages of confidence in any game:
     - Stage 1 – We have no guesses and no clue what each action does.
-    - Stage 2 – We’ve figured out the actions a bit and know a little about the game environment.
+    - Stage 2 – We've figured out the actions a bit and know a little about the game environment.
     - Stage 3 – We have many guesses about the game environment and some guesses about how to win.
-    - Stage 4 – We’ve figured out the actions, we’ve figured out the environment, and we’ve figured out how to win.
+    - Stage 4 – We've figured out the actions, we've figured out the environment, and we've figured out how to win.
 
     Most reliably, a game can be won while in Stage 4, but some games can be won in Stages 3, 2, or even 1 by being lucky and guessing the right thing early.
 
     First, review the lists of "guesses" and "figured_out" things, then estimate your stage of confidence:
     - If there are many guesses and no or only a few "figured_out" items, you are in Stage 1.
-    - If you have very few guesses and a high number of "figured_out" items, you are near or in Stage 4, which means you know what each action does and you’ve mostly figured out the game. That’s when it’s time to do the actions that lead to winning.
+    - If you have very few guesses and a high number of "figured_out" items, you are near or in Stage 4, which means you know what each action does and you've mostly figured out the game. That's when it's time to do the actions that lead to winning.
 
     Then, based on your stage of confidence, either try a guess by doing an action or make an informed action.
 
@@ -1027,12 +1335,29 @@ class Player2(dspy.Signature):
     2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET.
 
     Choose exactly one action. More than one action will be rejected by the game.
-    While choosing, trust the current "guesses" list, the current "figured_out" list, and your stage of confidence to choose the best action.
+    While choosing, trust the current "guesses" list, the current "figured_out" list, the "facts", and your stage of confidence to choose the best action.
+
+    IMPORTANT:
+    - You have access to "facts" - confirmed learnings that you can rely on.
+    - Current learning target: the item you are trying to make sense of.
+    - Choose actions that help make sense of this specific item.
+    - Your teammate (Player 1) will observe the results of your action to progress learning.
     """).strip()
 
     # --- Inputs ---
     guesses: List[str] = dspy.InputField()
     figured_out: List[str] = dspy.InputField()
+
+    # --- V2 New Inputs ---
+    facts: List[str] = dspy.InputField(
+        desc="Confirmed facts from items marked as learned through the learning system"
+    )
+    current_item_to_learn: str = dspy.InputField(
+        desc="The specific item currently being learned - choose actions to make sense of this"
+    )
+    inputs: dict = dspy.InputField(
+        desc="Current game inputs (frame data, game state, prev_action, etc.)"
+    )
 
     # --- Outputs ---
     decision_type = dspy.OutputField()
