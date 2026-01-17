@@ -501,6 +501,7 @@ class SensiLLM(LLM):
         """)
 
         conn.commit()
+        conn.close()
 
     def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
         """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
@@ -620,6 +621,8 @@ class SensiLLM(LLM):
         ).fetchone()
         figured_out = json.loads(figout_row["figs"])
         self.prev_figured_out = figured_out
+
+        conn.close()
 
     # ==================== V2 Helper Methods ====================
 
@@ -844,6 +847,7 @@ class SensiLLM(LLM):
         )
 
         conn.commit()
+        conn.close()
 
     def append_decision(self, card_id, game_id, turn_id,
                         prev_action, prev_decision_type ):
@@ -873,6 +877,7 @@ class SensiLLM(LLM):
         )
 
         conn.commit()
+        conn.close()
 
     def parse_two_line_enums(self, s: str):
         lines = [ln.strip() for ln in s.strip().splitlines() if ln.strip()]
@@ -1144,12 +1149,12 @@ class MetricGeneratorSignature(dspy.Signature):
     """
 
     item_to_learn: str = dspy.InputField(
-        desc="The item/concept the agent needs to learn about the game"
+        desc="The item/concept the agent needs to learn"
     )
 
     learning_metric: str = dspy.OutputField(
         desc="A clear description of how to verify that this item has been learned. "
-             "What observations or outcomes would confirm understanding?"
+             "What observations or outcomes would confirm understanding? Desired output is a criteria and a description that a judge will use when to give a score on how good a grasp learner has on the item"
     )
 
 
