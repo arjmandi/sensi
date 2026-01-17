@@ -626,6 +626,32 @@ class SensiLLM(LLM):
 
     # ==================== V2 Helper Methods ====================
 
+    def initialize_items_to_learn(self, game_id: str, card_id: str) -> None:
+        """
+        Initialize default learning items for a new game.
+        Called once when the first frame is received.
+        """
+        conn = sqlite3.connect(self.agent_db_name)
+        cur = conn.cursor()
+
+        default_items = [
+            "learn what each action does in the game",
+            "learn how to win the game",
+        ]
+
+        for item_name in default_items:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO items_to_learn (game_id, card_id, item_name, state, threshold)
+                VALUES (?, ?, ?, 'not_reached', 8)
+                """,
+                (game_id, card_id, item_name),
+            )
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Initialized {len(default_items)} learning items for game {game_id}")
+
     def get_current_item_to_learn(self, game_id: str, card_id: str) -> Optional[dict]:
         """
         Returns the current learning item, or None if all items are facts.
@@ -913,6 +939,8 @@ class SensiLLM(LLM):
             figured_out = ["RESET starts the game"]
             guesses = []
             self.score_counter = self.frames[-1].score
+            # V2: Initialize default learning items for this game
+            self.initialize_items_to_learn(self.game_id, self.card_id)
             self.append_observation(self.card_id, self.game_id, self.turn_id, self.frames[-1].state, current_frame, self.frame_diff, guesses, figured_out)
             self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
             return action  # the first run, start the game
