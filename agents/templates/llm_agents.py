@@ -994,6 +994,9 @@ class SensiLLM(LLM):
                 sense_score = int(getattr(score_result, "sense_score", 0))
                 reasoning = getattr(score_result, "reasoning", "")
                 self.update_item_state(current_item["id"], sense_score=sense_score)
+                # V2: Also store sense score per turn in inputs table for history
+                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_score", sense_score)
+                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_reasoning", reasoning)
                 logger.info(f"Sense score for '{current_item_name}': {sense_score}/10 - {reasoning}")
 
                 # Check if threshold is met
@@ -1001,6 +1004,10 @@ class SensiLLM(LLM):
                 if sense_score >= threshold:
                     self.update_item_state(current_item["id"], state="fact")
                     logger.info(f"Item '{current_item_name}' marked as FACT (score {sense_score} >= threshold {threshold})")
+                    # V2: Reset guesses and figured_out for the new learning item
+                    self.prev_guesses = []
+                    self.prev_figured_out = []
+                    logger.info("Reset guesses and figured_out for new learning item")
                     # Get next item to learn
                     facts = self.get_facts(self.game_id, self.card_id)
                     current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
@@ -1027,9 +1034,14 @@ class SensiLLM(LLM):
             current_item_to_learn=current_item_name,
         )
 
-        # Append player1 output
-        guesses = getattr(observations, "guesses", []) or []
-        figured_out = getattr(observations, "figured_out", []) or []
+        # V2: Append player1 output to previous lists (accumulate until item becomes fact)
+        new_guesses = getattr(observations, "guesses", []) or []
+        new_figured_out = getattr(observations, "figured_out", []) or []
+
+        # Append new items to previous lists, avoiding duplicates
+        guesses = self.prev_guesses + [g for g in new_guesses if g not in self.prev_guesses]
+        figured_out = self.prev_figured_out + [f for f in new_figured_out if f not in self.prev_figured_out]
+
         self.append_observation(
             card_id=self.card_id,
             game_id=self.game_id,
