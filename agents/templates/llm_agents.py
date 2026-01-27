@@ -1310,6 +1310,16 @@ class Player1(dspy.Signature):
     You can only communicate with Player 2 through these lists. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop "figured_out" items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher stages of confidence.
 
     So help him with smart "guesses" and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
+            
+    LIST MANAGEMENT RULES for figured out items and guesses:
+    When outputting guesses and figured_out, you are EDITING the previous lists:
+    - KEEP: Items still valid based on current observations
+    - EDIT: Items that need wording updates (e.g., more specific after new info)
+    - REMOVE: Items contradicted by evidence or no longer relevant
+    - ADD: New items based on latest frame/action
+    - PROMOTE: Move confirmed guesses from guesses → figured_out
+    
+    Do NOT start fresh each turn. Curate the existing lists.
 
     IMPORTANT: You have access to "facts" - these are items your team has definitively learned and confirmed through the learning system.
     Use the facts to inform your analysis, but focus your guesses and observations toward understanding the current item to learn.
