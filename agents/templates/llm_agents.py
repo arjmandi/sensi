@@ -1034,12 +1034,12 @@ class SensiLLM(LLM):
         )
 
         # V2: Append player1 output to previous lists (accumulate until item becomes fact)
-        new_guesses = getattr(observations, "guesses", []) or []
-        new_figured_out = getattr(observations, "figured_out", []) or []
+        guesses = getattr(observations, "guesses", []) or []
+        figured_out = getattr(observations, "figured_out", []) or []
 
         # Append new items to previous lists, avoiding duplicates
-        guesses = self.prev_guesses + [g for g in new_guesses if g not in self.prev_guesses]
-        figured_out = self.prev_figured_out + [f for f in new_figured_out if f not in self.prev_figured_out]
+        # guesses = self.prev_guesses + [g for g in new_guesses if g not in self.prev_guesses]
+        # figured_out = self.prev_figured_out + [f for f in new_figured_out if f not in self.prev_figured_out]
 
         self.append_observation(
             card_id=self.card_id,
@@ -1322,8 +1322,12 @@ class Player1(dspy.Signature):
     prev_action = dspy.InputField()
     frame_diff = dspy.InputField()
     losing_sequences = dspy.InputField()
-    prev_guesses = dspy.InputField()
-    prev_figured_out = dspy.InputField()
+    prev_guesses = dspy.InputField(
+        desc="Current guesses list to curate: keep valid, edit if needed, remove outdated"
+    )
+    prev_figured_out = dspy.InputField(
+        desc="Current figured_out list to curate: keep confirmed, edit if needed, remove if contradicted"
+    )
     guidelines = dspy.InputField()
 
     # --- V2 New Inputs ---
@@ -1336,10 +1340,10 @@ class Player1(dspy.Signature):
 
     # --- Outputs ---
     guesses: List[str] = dspy.OutputField(
-        desc="A Python list of guess strings, e.g. ['maybe ACTION1 jumps', ...]"
+        desc="A Python list of guess strings, Updated guesses list: preserved items + edits + new guesses. Remove unlikely ones."
     )
     figured_out: List[str] = dspy.OutputField(
-        desc="A Python list of confirmed / figured-out statements."
+        desc="A Python list of figured-out statements. Updated figured_out list: preserved confirmations + promoted guesses + new discoveries."
     )
 
 class Player2(dspy.Signature):
