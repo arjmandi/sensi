@@ -26,13 +26,12 @@ from ..structs import FrameData, GameAction, GameState, Scorecard
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 import dspy
-def configure_llm(model: str = "openai/gpt-5.1") -> None:
+def configure_llm(model: str = "openai/gpt-5.2") -> None:
     try:
         lm = dspy.LM(model, cache=False)
-        # dspy.settings.configure(lm=dspy.LM(model, cache=True))
         lm.kwargs.pop("max_tokens", None)
         lm.kwargs["max_completion_tokens"] = 4000
-        lm.kwargs.setdefault("temperature", 1.0)
+        lm.kwargs.setdefault("temperature", 0.3)
         dspy.settings.configure(lm=lm)
     except Exception:
         # In case DSPy is configured elsewhere or the model alias differs.
@@ -1057,17 +1056,17 @@ class SensiLLM(LLM):
         inputs_dict = self.get_inputs(self.game_id, self.card_id, self.turn_id)
 
         player2 = dspy.Predict(Player2)
-        nextAction = player2(
-            guesses=guesses,
-            figured_out=figured_out,
-            # V2 new inputs
-            facts=facts,
-            current_item_to_learn=current_item_name,
-            inputs=inputs_dict,
-        )
-
-        parsed = []
         try:
+            nextAction = player2(
+                guesses=guesses,
+                figured_out=figured_out,
+                # V2 new inputs
+                facts=facts,
+                current_item_to_learn=current_item_name,
+                inputs=inputs_dict,
+            )
+
+            parsed = []
             dt = getattr(nextAction, "decision_type", "")
             act = getattr(nextAction, "action", "")
             raw = f"{dt}\n{act}"
@@ -1075,7 +1074,19 @@ class SensiLLM(LLM):
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
             self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["decision_type"].name, parsed["action"].name)
         except Exception as e:
-            print("Parse error:", e)
+            print(f"Player2 LLM error, falling back to previous action: {e}")
+            # Fallback to previous action when LLM response is empty/invalid
+            prev_act = self.prev_action
+            if isinstance(prev_act, str):
+                prev_act = GameAction[prev_act]
+            prev_dt = self.prev_decision_type
+            if isinstance(prev_dt, str):
+                prev_dt = DecisionType[prev_dt]
+            elif isinstance(prev_dt, int):
+                prev_dt = DecisionType(prev_dt)
+            parsed = {"decision_type": prev_dt, "action": prev_act}
+            print(f"\nFALLBACK: {parsed['decision_type']} {parsed['action']}")
+            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["decision_type"].name, parsed["action"].name)
 
         # ==================== 7. RETURN ACTION (existing) ====================
         action = parsed["action"]
