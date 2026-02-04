@@ -1068,7 +1068,7 @@ class SensiLLM(LLM):
                 # V2 new inputs
                 facts=facts,
                 current_item_to_learn=current_item_name,
-                inputs=inputs_dict,
+                # inputs=inputs_dict,
             )
 
             parsed = []
@@ -1275,9 +1275,11 @@ class Player1(dspy.Signature):
     3. Previous type of decision Player 2 has done: GUESS or INFORMED
     4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
     5. Diff of frames to help identify changed areas
-    6. Losing action sequences: list of sequences of actions that led to game over in previous attempts
-    7. Facts: items your team has definitively learned and confirmed
-    8. Current item to learn: the specific item you are currently focused on learning
+    8. Current item to learn: your focus and most important objective. 
+    9. Sense score current_sense_score: a score that a judge has given you based on how much you have figured out about the item to learn
+    10. Score reason sense_reasoning: the reason of your score
+    11. Facts: items your team has definitively learned and confirmed in previous runs
+    
 
     You, Player 1, populate the "guesses" list and "figured_out" list as below:
     1. Develop guesses about the items to learn by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
@@ -1291,22 +1293,15 @@ class Player1(dspy.Signature):
        Then write simple guesses.
     2. Write all guesses you can make. For example, if you guess an area of the screen is showing a character, if there's a point counter, if there's a timer, etc. Be creative about guesses.
     3. If, based on the last action, you have figured out what each action does, move guesses about that to the "figured_out" list. Write them as simple actions. For example, "ACTION1 jumps over things".
-    4. If, based on the last action, you have figured out things about the game environment or how to win, put them in "figured_out". For example, "taking the character to the door makes us win".
-    5. If you want your friend, Player 2, to further try an action to see if that makes you progress or lose, add it to the "guesses" list. When your friend is not certain which move to pick, he tries more guesses.
-    6. If, based on current figured_out items, you have further guesses, add them to your "guesses" list for next rounds.
-    7. Remove guesses that seem unlikely at this point. You have to forget useless guesses; otherwise everything will be a guess and the list becomes useless.
-    8. Develop guesses about "things that make you lose" and write them in the "guesses" list. Again, consider:
-         1) the last action
-         2) the changes in the frames
-         3) previous guesses
-         4) previous figured_out things
-         5) previous sequences that led to game over
-    9. If, based on the last action, you can say some guesses definitely make you lose, move them to "figured_out". Write simple sentences for this. Your friend, Player 2, relies on "figured_out" items to avoid things that make you lose.
-    10. Remove things you deem unlikely to make you lose from the "guesses" list.
-    11. Develop and curate your guesses and figured out focused on the item to learn
-    12. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
+    4. Read the previous action from the inputs, and the difference it made in the frame "frame diff" this is most important piece of information to update your "figured_out" list. aggressively try to figure out the item to learn and check what the sense score jusde is asking for.
+    5. If, based on the last action, you have figured out things about the game environment or how to win, put them in "figured_out". For example, "taking the character to the door makes us win".
+    6. If you want your friend, Player 2, to further try an action to see if that makes you progress or lose, add it to the "guesses" list. When your friend is not certain which move to pick, he tries more guesses.
+    7. If, based on current figured_out items, you have further guesses, add them to your "guesses" list for next rounds.
+    8. Remove guesses that seem unlikely at this point. You have to forget useless guesses; otherwise everything will be a guess and the list becomes useless.
+    9. Develop and curate your guesses and figured out focused on the item to learn
+    10. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
 
-    You can only communicate with Player 2 through these lists. the goal is to learn the item action by action. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop "figured_out" items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher confidence in the item to learn.
+    You can only communicate with Player 2 through guesses list and the figured out list. The goal is to learn the item and get a good sense score. Player 2 tries to resolve your doubt (Player 1 doubt) about guesses by choosing actions that best help to move guesses to figured out about the item to learn.
 
     So help him with smart "guesses" and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
             
@@ -1399,26 +1394,15 @@ class Player2(dspy.Signature):
     2. The "figured_out" things from Player 1
     3. The "facts" - confirmed learnings from items your team has definitively learned
     4. The current item to learn - your current learning target
-    5. The game inputs (frame data, game state, etc.)
 
-    First, review the lists of "guesses" and "figured_out" things, then estimate your confidence about the item to learn:
-    - If there are many guesses and no or only a few "figured_out" items, you are in lower confidence.
-    - If you have very few guesses and a high number of "figured_out" items, you have higher confidence which means you know the item to learn better. That's when you can take informed actions.
-
-    Then, based on your confidence, either try a guess by doing an action or make an informed action.
+    First, review the lists of "guesses" and "figured_out" things, and then decide how you can help the Player 1 to learn the item:
+    Try to resolve Player 1 doubt about guesses by choosing actions that best help to move guesses to figured out about the item to learn.
 
     You must:
     1. Choose a type of decision: GUESS or INFORMED.
     2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET.
 
     Choose exactly one action. More than one action will be rejected.
-    While choosing, trust the current "guesses" list, the current "figured_out" list, the "facts", and your confidence to choose the best action.
-
-    IMPORTANT:
-    - You have access to "facts" - confirmed learnings that you can rely on.
-    - Current learning target: the item you are trying to make sense of.
-    - Choose actions that help make sense of this specific item.
-    - Your teammate (Player 1) will observe the results of your action to progress learning.
     """).strip()
 
     # --- Inputs ---
@@ -1432,9 +1416,9 @@ class Player2(dspy.Signature):
     current_item_to_learn: str = dspy.InputField(
         desc="The specific item currently being learned - choose actions to make sense of this"
     )
-    inputs: dict = dspy.InputField(
-        desc="Current game inputs (frame data, game state, prev_action, etc.)"
-    )
+    # inputs: dict = dspy.InputField(
+    #     desc="Current game inputs (frame data, game state, prev_action, etc.)"
+    # )
 
     # --- Outputs ---
     decision_type = dspy.OutputField()
