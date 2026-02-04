@@ -55,3 +55,39 @@ sample metric for action learning:
 - **7–8:** Accurate for nearly all actions including constraints
 - **9:** Complete and precise; 
 - **10:** Exhaustive mastery; explains mechanics and feedback signals clearly; "
+
+another good judgement
+Criteria to verify the agent has learned what each action does in the game:
+
+1) **Action→Outcome mapping accuracy (core test)**
+- For every available action in the action space, the agent can state the expected immediate effects on:
+  - the agent’s position/orientation/velocity (if applicable),
+  - inventory/equipment/state variables,
+  - environment objects (doors, items, enemies, tiles, etc.),
+  - turn progression/time cost (if applicable),
+  - reward/penalty signals (if any are directly tied to the action).
+- Scoring: Across a standardized test suite of scenarios, the agent’s predicted outcomes match the observed outcomes with high accuracy (e.g., ≥90–95% exact match on discrete effects; within tolerance on continuous changes).
+
+2) **Context-conditional behavior understanding**
+- The agent correctly predicts when an action:
+  - has no effect (e.g., “move into wall”),
+  - fails with a specific feedback (e.g., “cannot”, “out of range”, “no ammo”),
+  - produces different outcomes depending on context (e.g., “use” on different objects).
+- Scoring: In a set of edge-case scenarios, the agent correctly anticipates success/failure and the resulting state change/feedback ≥90% of the time.
+
+3) **Causal intervention validation**
+- Given a goal phrased as “cause X to happen” (e.g., “pick up item”, “open door”, “attack enemy”, “advance time”), the agent selects the correct action(s) and demonstrates the expected effect in-game.
+- Scoring: For each action, at least one controlled experiment shows the agent can intentionally trigger the action’s signature effect and can also demonstrate a counterexample where the effect does not occur due to missing preconditions.
+
+4) **Generalization to novel states**
+- In previously unseen but valid configurations (new room layouts, different object placements, different enemy positions), the agent still predicts and demonstrates the same action semantics.
+- Scoring: Maintains ≥85–90% prediction accuracy and correct action selection on held-out scenarios.
+
+5) **Documentation-level completeness**
+- The agent can produce a complete “action manual” listing every action, its preconditions, primary effects, failure modes, and any costs (time/energy/resources), consistent with observed gameplay.
+- Scoring: A judge can cross-check each entry against gameplay logs; no missing actions, and ≤ minor errors (no major incorrect effect descriptions).
+
+Observations/outcomes that confirm learning:
+- High agreement between predicted and actual state transitions after actions.
+- Correct handling of edge cases and preconditions.
+- Ability to reliably use each action to achieve its intended effect across varied contexts.
