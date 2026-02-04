@@ -981,7 +981,7 @@ class SensiLLM(LLM):
             # V2: Initialize default learning items for this game
             self.initialize_items_to_learn(self.game_id, self.card_id)
             self.append_observation(self.card_id, self.game_id, self.turn_id, self.frames[-1].state, current_frame, self.frame_diff, guesses, figured_out)
-            self.append_decision(self.card_id, self.game_id, self.turn_id, DecisionType.INFORMED.name, GameAction.RESET.name)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, GameAction.RESET.name, DecisionType.INFORMED.name)
             return action  # the first run, start the game
 
         logger.info("Sending to Assistant for action...")
@@ -1120,7 +1120,7 @@ class SensiLLM(LLM):
             raw = f"{dt}\n{act}"
             parsed = self.parse_two_line_enums(raw)
             print("\nPARSED:", parsed["decision_type"], parsed["action"])
-            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["decision_type"].name, parsed["action"].name)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["action"].name, parsed["decision_type"].name)
         except Exception as e:
             print(f"Player2 LLM error, falling back to previous action: {e}")
             # Fallback to previous action when LLM response is empty/invalid
@@ -1134,7 +1134,7 @@ class SensiLLM(LLM):
                 prev_dt = DecisionType(prev_dt)
             parsed = {"decision_type": prev_dt, "action": prev_act}
             print(f"\nFALLBACK: {parsed['decision_type']} {parsed['action']}")
-            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["decision_type"].name, parsed["action"].name)
+            self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["action"].name, parsed["decision_type"].name)
 
         # ==================== 7. RETURN ACTION (existing) ====================
         action = parsed["action"]
