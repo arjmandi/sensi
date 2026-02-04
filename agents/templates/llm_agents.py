@@ -634,7 +634,7 @@ class SensiLLM(LLM):
         cur = conn.cursor()
 
         default_items = [
-            "learn what each action does in the game",
+            "learn what each action does in the game and how it affects your energy for playing",
             "learn how to win the game",
         ]
 
@@ -987,7 +987,7 @@ class SensiLLM(LLM):
                     learning_metric=current_item["learning_metric"],
                     facts=facts,
                     figured_out=self.prev_figured_out,
-                    inputs=inputs_dict,
+                    # inputs=inputs_dict,
                 )
 
                 sense_score = int(getattr(score_result, "sense_score", 0))
@@ -1197,6 +1197,8 @@ class MetricGeneratorSignature(dspy.Signature):
     - What observations would confirm understanding?
     - What test actions could validate the learning?
     - What patterns in game feedback would indicate mastery?
+
+    This metric will later on will be used to give a score to the learning. the score will be between 1 and 10. 1 lower understanding, and 10 highest score of understanding.
     """
 
     item_to_learn: str = dspy.InputField(
@@ -1205,7 +1207,7 @@ class MetricGeneratorSignature(dspy.Signature):
 
     learning_metric: str = dspy.OutputField(
         desc="A clear description of how to verify that this item has been learned. "
-             "What observations or outcomes would confirm understanding? Desired output is a criteria and a description that a judge will use when to give a score on how good a grasp learner has on the item"
+             "What observations or outcomes would confirm understanding? Desired output is a criteria and a description that a judge will use when to give a score on how good a grasp learner has on the item. This metric will later on will be used to give a score to the learning. the score will be between 1 to 10. 1 lower understanding, and 10 highest score of understanding."
     )
 
 
@@ -1232,12 +1234,12 @@ class SenseScorerSignature(dspy.Signature):
     figured_out: List[str] = dspy.InputField(
         desc="Things Player1 has figured out through gameplay"
     )
-    inputs: dict = dspy.InputField(
-        desc="Current game inputs (frame_summary, game_state, prev_action, etc.)"
-    )
+    # inputs: dict = dspy.InputField(
+    #     desc="Current game inputs (frame_summary, game_state, prev_action, etc.)"
+    # )
 
     sense_score: int = dspy.OutputField(
-        desc="Score from 1-10 indicating learning progress"
+        desc="Score from 1-10 indicating learning progress, reward also the progress of learning"
     )
     reasoning: str = dspy.OutputField(
         desc="Brief explanation for the score"
