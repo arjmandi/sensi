@@ -634,7 +634,8 @@ class SensiLLM(LLM):
         cur = conn.cursor()
 
         default_items = [
-            "learn what each action does in the game and how it affects your energy for playing",
+            "learn what each action does in the game",
+            "learn how actions affects your energy while playing",
             "learn how to win the game",
         ]
 
