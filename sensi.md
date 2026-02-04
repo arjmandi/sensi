@@ -38,3 +38,20 @@ r1: if the agent is in tool discovery, it must be able to update the description
 
 level 1
 ["RESET starts the game", "blue platform (with red top) is our player", "we can move the player in the teal area - red area is not reachable", "ACTION1 moves the player 1 pixel up", "ACTION2 moves the player 1 pixel down", "ACTION3 moves the player 1 pixel left", "ACTION4 moves the player 1 pixel right", "other actions are not needed","each action consumes 1 unit of energy if moves the player, units of energy are show on the top as dots, white means remained energy, teal means consumed energy", "if all dots go teal we can't move and game over", "shape in the middle with blue dot and black wings is the key generator", "the shape in the middle higher than the key generaotr is a door. the purple square with the key shape", "the shape in the left button corner is our current key", "when we pass over the key generator it generates a new key", "we must pass over the key generator until it generates a key matching to the door"]
+
+sample metric for action learning:
+"**Criteria:** The learner can accurately describe, predict, and demonstrate the effect of every available action in the game across relevant contexts,  and interactions with game state.
+
+**What to test / observe (judge checklist):**
+1. **Action catalog completeness:** Learner enumerates all actions available in the current game (including context-sensitive actions, menu actions, and conditional actions) and groups them by type if applicable (movement, interaction, combat, inventory, UI/meta, etc.).
+2. **Correct effect description:** For each action, learner states:
+   - Immediate outcome (what changes on screen/state right away)
+
+
+**Scoring guide (1–10):**
+- **1–2:** Knows only a few actions; frequent incorrect descriptions; 
+- **3–4:** Identifies at least 4 actions 
+- **5–6:** Correct for most actions;
+- **7–8:** Accurate for nearly all actions including constraints
+- **9:** Complete and precise; 
+- **10:** Exhaustive mastery; explains mechanics and feedback signals clearly; "
