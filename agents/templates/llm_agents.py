@@ -776,6 +776,45 @@ class SensiLLM(LLM):
         conn.close()
         return {row["key"]: json.loads(row["value"]) for row in rows}
 
+    def get_action_history(self, game_id: str, card_id: str, limit: int = 10) -> List[dict]:
+        """
+        Get the last N actions and their frame_diffs from the game table.
+        Returns a list of dicts with 'turn_id', 'action', and 'frame_diff'.
+        """
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        rows = cur.execute(
+            """
+            SELECT turn_id, prev_action, frame_diff
+            FROM game
+            WHERE game_id = ? AND card_id = ? AND prev_action IS NOT NULL
+            ORDER BY turn_id DESC
+            LIMIT ?
+            """,
+            (game_id, card_id, limit),
+        ).fetchall()
+
+        conn.close()
+
+        # Reverse to get chronological order (oldest first)
+        history = []
+        for row in reversed(rows):
+            frame_diff_parsed = None
+            if row["frame_diff"]:
+                try:
+                    frame_diff_parsed = json.loads(row["frame_diff"])
+                except json.JSONDecodeError:
+                    frame_diff_parsed = row["frame_diff"]
+            history.append({
+                "turn_id": row["turn_id"],
+                "action": row["prev_action"],
+                "frame_diff": frame_diff_parsed,
+            })
+
+        return history
+
     # ==================== End V2 Helper Methods ====================
 
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
@@ -1020,6 +1059,9 @@ class SensiLLM(LLM):
             logger.info("All items learned! No current learning target.")
 
         # ==================== 5. PLAYER 1 - OBSERVER (modified) ====================
+        # Fetch action history (last 10 actions and their frame_diffs)
+        action_history = self.get_action_history(self.game_id, self.card_id, limit=10)
+
         player1 = dspy.Predict(Player1)
         observations = player1(
             current_frame=current_frame,
@@ -1036,6 +1078,7 @@ class SensiLLM(LLM):
             current_item_to_learn=current_item_name,
             current_sense_score=current_sense_score,
             sense_reasoning=sense_reasoning,
+            action_history=action_history,
         )
 
         # V2: Append player1 output to previous lists (accumulate until item becomes fact)
@@ -1275,10 +1318,11 @@ class Player1(dspy.Signature):
     3. Previous type of decision Player 2 has done: GUESS or INFORMED
     4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
     5. Diff of frames to help identify changed areas
-    8. Current item to learn: your focus and most important objective. 
-    9. Sense score current_sense_score: a score that a judge has given you based on how much you have figured out about the item to learn
-    10. Score reason sense_reasoning: the reason of your score
-    11. Facts: items your team has definitively learned and confirmed in previous runs
+    6. Current item to learn: your focus and most important objective.
+    7. Sense score current_sense_score: a score that a judge has given you based on how much you have figured out about the item to learn
+    8. Score reason sense_reasoning: the reason of your score
+    9. Facts: items your team has definitively learned and confirmed in previous runs
+    10. Action history: the last 10 actions and their frame_diffs showing what each action caused
     
 
     You, Player 1, populate the "guesses" list and "figured_out" list as below:
@@ -1328,6 +1372,15 @@ class Player1(dspy.Signature):
 
     Use the sense_reasoning to understand WHY the score is what it is. If the reasoning says "missing understanding of X",
     focus your guesses and observations on X. This feedback loop helps you steer the game toward learning efficiently.
+
+    ACTION HISTORY:
+    You receive action_history containing the last 10 actions and their frame_diffs.
+    Use this history to:
+    - Identify patterns: "Every time ACTION1 is used, the player moves right"
+    - Confirm or refute guesses: If you guessed ACTION2 jumps, check the history for ACTION2 entries
+    - Understand cause-effect: Compare what action was taken vs what changed in the frame
+    - Avoid repeating mistakes: If an action consistently causes negative outcomes, note it in figured_out
+    - Build comprehensive understanding: The history gives you multiple data points to reason about the item to learn
     """).strip()
 
     # --- Inputs ---
@@ -1357,6 +1410,9 @@ class Player1(dspy.Signature):
     )
     sense_reasoning: str = dspy.InputField(
         desc="Explanation from the sense scorer about why the current score was given and what's missing."
+    )
+    action_history: List[dict] = dspy.InputField(
+        desc="Last 10 actions and their frame_diffs. Each entry has 'turn_id', 'action', and 'frame_diff'."
     )
 
     # --- Outputs ---
