@@ -1198,7 +1198,6 @@ class MetricGeneratorSignature(dspy.Signature):
     - What test actions could validate the learning?
     - What patterns in game feedback would indicate mastery?
 
-    This metric will later on will be used to give a score to the learning. the score will be between 1 and 10. 1 lower understanding, and 10 highest score of understanding.
     """
 
     item_to_learn: str = dspy.InputField(
@@ -1207,7 +1206,7 @@ class MetricGeneratorSignature(dspy.Signature):
 
     learning_metric: str = dspy.OutputField(
         desc="A clear description of how to verify that this item has been learned. "
-             "What observations or outcomes would confirm understanding? Desired output is a criteria and a description that a judge will use when to give a score on how good a grasp learner has on the item. This metric will later on will be used to give a score to the learning. the score will be between 1 to 10. 1 lower understanding, and 10 highest score of understanding."
+             "What observations or outcomes would confirm understanding? Desired output is a criteria and a description that a judge will use when to give a score on how good a grasp learner has on the item. This metric will later on will be used to give a score to the learning. the score will be between 1 to 10. 1 lower understanding of the item to learn, and 10 highest score of understanding."
     )
 
 
@@ -1239,7 +1238,7 @@ class SenseScorerSignature(dspy.Signature):
     # )
 
     sense_score: int = dspy.OutputField(
-        desc="Score from 1-10 indicating learning progress, reward also the progress of learning"
+        desc="Score from 1-10 indicating learning progress."
     )
     reasoning: str = dspy.OutputField(
         desc="Brief explanation for the score"
@@ -1265,14 +1264,6 @@ class Player1(dspy.Signature):
     2) a list of "figured_out" things.
     Both lists will be visible to Player 2.
 
-    Usually we have 4 stages of confidence in any game:
-    stage 1: when we have no guess, no clue what each action does.
-    stage 2: once we figure out the actions and a little about the game environment.
-    stage 3: we have a lot of guesses about the game environment and some guesses on how to win.
-    stage 4: we've figured out the actions, we've figured out the environment, and we've figured out how to win.
-
-    Most reliably, a game can be won while in stage 4, but some games can be won in stages 3, 2, or even 1 due to being lucky and guessing the right thing early.
-
     Player 1 (you), in each turn receives:
     1. A snapshot of the screen as the current frame: a photo
     2. Previous frame in the same format
@@ -1284,7 +1275,7 @@ class Player1(dspy.Signature):
     8. Current item to learn: the specific item you are currently focused on learning
 
     You, Player 1, populate the "guesses" list and "figured_out" list as below:
-    1. Develop guesses by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
+    1. Develop guesses about the items to learn by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
        Consider:
          1) the last action
          2) the changes in the frames
@@ -1307,9 +1298,10 @@ class Player1(dspy.Signature):
          5) previous sequences that led to game over
     9. If, based on the last action, you can say some guesses definitely make you lose, move them to "figured_out". Write simple sentences for this. Your friend, Player 2, relies on "figured_out" items to avoid things that make you lose.
     10. Remove things you deem unlikely to make you lose from the "guesses" list.
-    11. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
+    11. Develop and curate your guesses and figured out focused on the item to learn
+    12. Review the "figured_out" list and if things contradict each other, make a decision and provide a sane list to Player 2.
 
-    You can only communicate with Player 2 through these lists. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop "figured_out" items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher stages of confidence.
+    You can only communicate with Player 2 through these lists. the goal is to learn the item action by action. Be patient. The more you develop "guesses", the more Player 2 will do actions outside "figured_out". The more you develop "figured_out" items and remove guesses, the more Player 2 will play using "figured_out" instead of exploring guesses, meaning reaching higher confidence in the item to learn.
 
     So help him with smart "guesses" and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
             
@@ -1386,28 +1378,19 @@ class Player2(dspy.Signature):
     3. The "facts" - confirmed learnings from items your team has definitively learned
     4. The current item to learn - your current learning target
     5. The game inputs (frame data, game state, etc.)
-    6. Your stage of confidence
 
-    Usually, we have 4 stages of confidence in any game:
-    - Stage 1 – We have no guesses and no clue what each action does.
-    - Stage 2 – We've figured out the actions a bit and know a little about the game environment.
-    - Stage 3 – We have many guesses about the game environment and some guesses about how to win.
-    - Stage 4 – We've figured out the actions, we've figured out the environment, and we've figured out how to win.
+    First, review the lists of "guesses" and "figured_out" things, then estimate your confidence about the item to learn:
+    - If there are many guesses and no or only a few "figured_out" items, you are in lower confidence.
+    - If you have very few guesses and a high number of "figured_out" items, you have higher confidence which means you know the item to learn better. That's when you can take informed actions.
 
-    Most reliably, a game can be won while in Stage 4, but some games can be won in Stages 3, 2, or even 1 by being lucky and guessing the right thing early.
-
-    First, review the lists of "guesses" and "figured_out" things, then estimate your stage of confidence:
-    - If there are many guesses and no or only a few "figured_out" items, you are in Stage 1.
-    - If you have very few guesses and a high number of "figured_out" items, you are near or in Stage 4, which means you know what each action does and you've mostly figured out the game. That's when it's time to do the actions that lead to winning.
-
-    Then, based on your stage of confidence, either try a guess by doing an action or make an informed action.
+    Then, based on your confidence, either try a guess by doing an action or make an informed action.
 
     You must:
     1. Choose a type of decision: GUESS or INFORMED.
     2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET.
 
-    Choose exactly one action. More than one action will be rejected by the game.
-    While choosing, trust the current "guesses" list, the current "figured_out" list, the "facts", and your stage of confidence to choose the best action.
+    Choose exactly one action. More than one action will be rejected.
+    While choosing, trust the current "guesses" list, the current "figured_out" list, the "facts", and your confidence to choose the best action.
 
     IMPORTANT:
     - You have access to "facts" - confirmed learnings that you can rely on.
