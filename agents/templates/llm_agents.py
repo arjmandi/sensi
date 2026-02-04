@@ -958,6 +958,8 @@ class SensiLLM(LLM):
         # Get the current item to learn
         current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
         current_item_name = ""
+        current_sense_score = 0
+        sense_reasoning = ""
         facts = self.get_facts(self.game_id, self.card_id)
 
         if current_item is not None:
@@ -991,19 +993,19 @@ class SensiLLM(LLM):
                     # inputs=inputs_dict,
                 )
 
-                sense_score = int(getattr(score_result, "sense_score", 0))
-                reasoning = getattr(score_result, "reasoning", "")
-                self.update_item_state(current_item["id"], sense_score=sense_score)
+                current_sense_score = int(getattr(score_result, "sense_score", 0))
+                sense_reasoning = getattr(score_result, "reasoning", "")
+                self.update_item_state(current_item["id"], sense_score=current_sense_score)
                 # V2: Also store sense score per turn in inputs table for history
-                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_score", sense_score)
-                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_reasoning", reasoning)
-                logger.info(f"Sense score for '{current_item_name}': {sense_score}/10 - {reasoning}")
+                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_score", current_sense_score)
+                self.store_input(self.game_id, self.card_id, self.turn_id, "sense_reasoning", sense_reasoning)
+                logger.info(f"Sense score for '{current_item_name}': {current_sense_score}/10 - {sense_reasoning}")
 
                 # Check if threshold is met
                 threshold = current_item["threshold"] or 8
-                if sense_score >= threshold:
+                if current_sense_score >= threshold:
                     self.update_item_state(current_item["id"], state="fact")
-                    logger.info(f"Item '{current_item_name}' marked as FACT (score {sense_score} >= threshold {threshold})")
+                    logger.info(f"Item '{current_item_name}' marked as FACT (score {current_sense_score} >= threshold {threshold})")
                     # V2: Reset guesses and figured_out for the new learning item
                     self.prev_guesses = []
                     self.prev_figured_out = []
@@ -1032,6 +1034,8 @@ class SensiLLM(LLM):
             # V2 new inputs
             facts=facts,
             current_item_to_learn=current_item_name,
+            current_sense_score=current_sense_score,
+            sense_reasoning=sense_reasoning,
         )
 
         # V2: Append player1 output to previous lists (accumulate until item becomes fact)
@@ -1318,6 +1322,17 @@ class Player1(dspy.Signature):
 
     IMPORTANT: You have access to "facts" - these are items your team has definitively learned and confirmed through the learning system.
     Use the facts to inform your analysis, but focus your guesses and observations toward understanding the current item to learn.
+    Your goal is to learn the item to learn by steering the Player 2 through maintaining the guesses and figured out lists
+    
+    SENSE SCORE FEEDBACK:
+    You receive a current_sense_score (1-10) and sense_reasoning explaining why the score was given.
+    - Score 1-3: Very low understanding. Focus on basic exploration and generating diverse guesses.
+    - Score 4-6: Partial understanding. Refine your guesses based on the reasoning feedback.
+    - Score 7-8: Good understanding with gaps. The reasoning tells you what's still missing - target those gaps.
+    - Score 9-10: Near mastery. Consolidate figured_out items and prepare to move to the next learning item.
+
+    Use the sense_reasoning to understand WHY the score is what it is. If the reasoning says "missing understanding of X",
+    focus your guesses and observations on X. This feedback loop helps you steer the game toward learning efficiently.
     """).strip()
 
     # --- Inputs ---
@@ -1341,6 +1356,12 @@ class Player1(dspy.Signature):
     )
     current_item_to_learn: str = dspy.InputField(
         desc="The specific item currently being learned - focus guesses toward this"
+    )
+    current_sense_score: int = dspy.InputField(
+        desc="Current sense score (1-10) for the learning item. Higher means closer to mastery."
+    )
+    sense_reasoning: str = dspy.InputField(
+        desc="Explanation from the sense scorer about why the current score was given and what's missing."
     )
 
     # --- Outputs ---
