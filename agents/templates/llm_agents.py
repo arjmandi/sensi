@@ -26,7 +26,7 @@ from ..structs import FrameData, GameAction, GameState, Scorecard
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 import dspy
-def configure_llm(model: str = "openai/gpt-5.2") -> None:
+def configure_llm(model: str = "anthropic/claude-sonnet-4-5-20250929") -> None:
     try:
         lm = dspy.LM(model, cache=False)
         lm.kwargs.pop("max_tokens", None)
@@ -418,7 +418,7 @@ class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
     MAX_ACTIONS = 20
     DO_OBSERVATION = False
-    MODEL = "gpt-5"
+    MODEL = "anthropic/claude-sonnet-4-20250514"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
     VALID_DT = {"GUESS", "INFORMED"}
@@ -862,7 +862,20 @@ class SensiLLM(LLM):
             current_frame=current_img,
         )
         # `prediction.diff_json` is already a string (ideally valid JSON).
-        return prediction.diff_json.strip()
+        diff_json = getattr(prediction, "diff_json", None)
+        if not diff_json or not diff_json.strip():
+            # Return default empty diff if model returns empty response
+            logger.warning("frame_diff_finder returned empty response, using default")
+            return json.dumps({
+                "added_objects": [],
+                "removed_objects": [],
+                "moved_objects": [],
+                "ui_changes": [],
+                "score_or_status_changes": [],
+                "terminal_event": False,
+                "high_level_summary": "No changes detected or empty response from model"
+            })
+        return diff_json.strip()
 
     def append_observation(self, card_id, game_id, turn_id, game_state,
                         prev_frame_img, frame_diff, guesses, figured_out):
@@ -989,7 +1002,19 @@ class SensiLLM(LLM):
             self.load_prev_state_for_player1(self.game_id, self.card_id)
             current_frame = self.grid_to_image(self.frames[-1].frame)
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
-            self.frame_diff = json.loads(diff_json_str)
+            try:
+                self.frame_diff = json.loads(diff_json_str)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse frame_diff JSON: {e}. Raw: {diff_json_str[:200]}")
+                self.frame_diff = {
+                    "added_objects": [],
+                    "removed_objects": [],
+                    "moved_objects": [],
+                    "ui_changes": [],
+                    "score_or_status_changes": [],
+                    "terminal_event": False,
+                    "high_level_summary": "Failed to parse frame diff"
+                }
         else:  # start of the play
             figured_out = []
             guesses = []
