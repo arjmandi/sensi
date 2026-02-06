@@ -91,3 +91,18 @@ Observations/outcomes that confirm learning:
 - High agreement between predicted and actual state transitions after actions.
 - Correct handling of edge cases and preconditions.
 - Ability to reliably use each action to achieve its intended effect across varied contexts.
+
+
+**Criteria:** The learner can accurately describe, the effect of every available action in the game
+
+**judge checklist:**
+1. **Action catalog completeness:** Learner enumerates all actions available in the current game (including context-sensitive actions, menu actions, and conditional actions) and groups them by type if applicable (movement, interaction, combat, inventory, UI/meta, etc.).
+2. **Correct effect description:** For each action, learner states:
+   - Immediate outcome (what changes on screen/state right away)
+
+
+**Scoring guide (1–10):**
+- **1–3:** Knows only a few actions; frequent incorrect descriptions; 
+- **4–6:** Identifies at least 4 actions 
+- **7:** Correct for most actions;
+- **8-10:** Accurate for nearly all actions including constraints

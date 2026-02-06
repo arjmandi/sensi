@@ -633,6 +633,22 @@ class SensiLLM(LLM):
         conn = sqlite3.connect(self.agent_db_name)
         cur = conn.cursor()
 
+        # Items that are already known facts (don't need to learn)
+        fact_items = [
+            "RESET starts the game",
+            "all available actions: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, RESET",
+        ]
+
+        for item_name in fact_items:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO items_to_learn (game_id, card_id, item_name, state, threshold)
+                VALUES (?, ?, ?, 'fact', 8)
+                """,
+                (game_id, card_id, item_name),
+            )
+
+        # Items that need to be learned
         default_items = [
             "learn what each action does in the game",
             "learn how actions affects your energy while playing",
@@ -650,7 +666,7 @@ class SensiLLM(LLM):
 
         conn.commit()
         conn.close()
-        logger.info(f"Initialized {len(default_items)} learning items for game {game_id}")
+        logger.info(f"Initialized {len(fact_items)} facts and {len(default_items)} learning items for game {game_id}")
 
     def get_current_item_to_learn(self, game_id: str, card_id: str) -> Optional[dict]:
         """
@@ -975,7 +991,7 @@ class SensiLLM(LLM):
             diff_json_str = self.frame_diff_finder(current_frame, self.prev_frame)
             self.frame_diff = json.loads(diff_json_str)
         else:  # start of the play
-            figured_out = ["RESET starts the game"]
+            figured_out = []
             guesses = []
             self.score_counter = self.frames[-1].score
             # V2: Initialize default learning items for this game
@@ -1316,7 +1332,7 @@ class Player1(dspy.Signature):
     1. A snapshot of the screen as the current frame: a photo
     2. Previous frame in the same format
     3. Previous type of decision Player 2 has done: GUESS or INFORMED
-    4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET
+    4. Previous action Player 2 has done: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, RESET
     5. Diff of frames to help identify changed areas
     6. Current item to learn: your focus and most important objective.
     7. Sense score current_sense_score: a score that a judge has given you based on how much you have figured out about the item to learn
@@ -1456,7 +1472,7 @@ class Player2(dspy.Signature):
 
     You must:
     1. Choose a type of decision: GUESS or INFORMED.
-    2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION7, RESET.
+    2. Choose one action from: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, RESET.
 
     Choose exactly one action. More than one action will be rejected.
     """).strip()
