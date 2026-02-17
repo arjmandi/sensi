@@ -29,13 +29,12 @@ import dspy
 def configure_llm(model: str = "anthropic/claude-sonnet-4-5-20250929") -> None:
     try:
         lm = dspy.LM(model, cache=False)
-        lm.kwargs.pop("max_tokens", None)
-        lm.kwargs["max_completion_tokens"] = 4000
+        lm.kwargs.pop("max_completion_tokens", None)
+        lm.kwargs["max_tokens"] = 4000
         lm.kwargs.setdefault("temperature", 0.3)
         dspy.settings.configure(lm=lm)
-    except Exception:
-        # In case DSPy is configured elsewhere or the model alias differs.
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to configure LLM with model {model}: {e}")
 
 # Call this on import by default (safe if configured elsewhere).
 configure_llm()
@@ -875,7 +874,13 @@ class SensiLLM(LLM):
                 "terminal_event": False,
                 "high_level_summary": "No changes detected or empty response from model"
             })
-        return diff_json.strip()
+        # Strip markdown code fences that some models wrap JSON in
+        result = diff_json.strip()
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1] if "\n" in result else result[3:]
+        if result.endswith("```"):
+            result = result[:-3]
+        return result.strip()
 
     def append_observation(self, card_id, game_id, turn_id, game_state,
                         prev_frame_img, frame_diff, guesses, figured_out):
