@@ -26,7 +26,7 @@ from ..structs import FrameData, GameAction, GameState, Scorecard
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 import dspy
-def configure_llm(model: str = "anthropic/claude-sonnet-4-5-20250929") -> None:
+def configure_llm(model: str = "anthropic/claude-opus-4-6") -> None:
     try:
         lm = dspy.LM(model, cache=False)
         lm.kwargs.pop("max_completion_tokens", None)
@@ -417,7 +417,7 @@ class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
     MAX_ACTIONS = 20
     DO_OBSERVATION = False
-    MODEL = "anthropic/claude-sonnet-4-20250514"
+    MODEL = "anthropic/claude-opus-4-6"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
     VALID_DT = {"GUESS", "INFORMED"}
