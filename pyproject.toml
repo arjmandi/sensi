@@ -25,6 +25,9 @@ dependencies = [
     "dspy==2.5.32",
     "dspy-ai==2.5.32",
     "litellm==1.51.0",
+    "google-auth>=2.0.0",
+    "google-cloud-aiplatform>=1.38.0",
+    "google-genai>=0.3.0",
 ]
 
 [dependency-groups]

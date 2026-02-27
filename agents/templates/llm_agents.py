@@ -26,9 +26,16 @@ from ..structs import FrameData, GameAction, GameState, Scorecard
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 import dspy
-def configure_llm(model: str = "anthropic/claude-opus-4-6") -> None:
+def configure_llm(model: str = "gemini/gemini-3-pro-preview") -> None:
     try:
-        lm = dspy.LM(model, cache=False)
+        # Check for Google/Gemini API key in environment variables
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        
+        lm_kwargs = {"cache": False}
+        if api_key and "gemini" in model.lower():
+            lm_kwargs["api_key"] = api_key
+            
+        lm = dspy.LM(model, **lm_kwargs)
         lm.kwargs.pop("max_completion_tokens", None)
         lm.kwargs["max_tokens"] = 4000
         lm.kwargs.setdefault("temperature", 0.3)
@@ -417,7 +424,7 @@ class SensiLLM(LLM):
     """Similar to LLM, with more senses."""
     MAX_ACTIONS = 20
     DO_OBSERVATION = False
-    MODEL = "anthropic/claude-opus-4-6"
+    MODEL = "gemini/gemini-3.1-pro-preview"
     MESSAGE_LIMIT = 10
     REASONING_EFFORT = "low"
     VALID_DT = {"GUESS", "INFORMED"}
@@ -843,25 +850,28 @@ class SensiLLM(LLM):
         if prev_frame:
             prev_img =  DSPyImage(url=encode_image(prev_frame))
         else:
-            prev_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
-            buf = io.BytesIO()
-            prev_img.save(buf, format="PNG")
+            empty_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+            prev_img = DSPyImage(url=encode_image(empty_img))
 
         current_img = None
         if current_frame:
             current_img =  DSPyImage(url=encode_image(current_frame))
         else:
-            current_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
-            buf = io.BytesIO()
-            current_img.save(buf, format="PNG")
+            empty_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+            current_img = DSPyImage(url=encode_image(empty_img))
 
 
-        prediction = self.frame_diff_module(
-            prev_frame=prev_img,
-            current_frame=current_img,
-        )
-        # `prediction.diff_json` is already a string (ideally valid JSON).
-        diff_json = getattr(prediction, "diff_json", None)
+        try:
+            prediction = self.frame_diff_module(
+                prev_frame=prev_img,
+                current_frame=current_img,
+            )
+            # `prediction.diff_json` is already a string (ideally valid JSON).
+            diff_json = getattr(prediction, "diff_json", None)
+        except Exception as e:
+            logger.warning(f"frame_diff_module failed with exception: {e}")
+            diff_json = None
+
         if not diff_json or not diff_json.strip():
             # Return default empty diff if model returns empty response
             logger.warning("frame_diff_finder returned empty response, using default")
@@ -1089,8 +1099,33 @@ class SensiLLM(LLM):
                 # Check if threshold is met
                 threshold = current_item["threshold"] or 8
                 if current_sense_score >= threshold:
-                    self.update_item_state(current_item["id"], state="fact")
-                    logger.info(f"Item '{current_item_name}' marked as FACT (score {current_sense_score} >= threshold {threshold})")
+                    # Mark the learning item as COMPLETED (not fact) so we don't query it as a fact itself
+                    self.update_item_state(current_item["id"], state="completed")
+                    logger.info(f"Item '{current_item_name}' COMPLETED (score {current_sense_score} >= threshold {threshold})")
+
+                    # Transfer 'figured_out' items to be new FACTS for next rounds
+                    new_facts_count = 0
+                    if self.prev_figured_out:
+                        conn = sqlite3.connect(self.agent_db_name)
+                        cur = conn.cursor()
+                        for fact in self.prev_figured_out:
+                            # Insert each figured_out string as a new FACT item
+                            # We use the fact string as item_name, and state='fact'
+                            try:
+                                cur.execute(
+                                    """
+                                    INSERT OR IGNORE INTO items_to_learn (game_id, card_id, item_name, state, threshold)
+                                    VALUES (?, ?, ?, 'fact', 8)
+                                    """,
+                                    (self.game_id, self.card_id, fact),
+                                )
+                                new_facts_count += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to insert fact '{fact}': {e}")
+                        conn.commit()
+                        conn.close()
+                    logger.info(f"Transferred {new_facts_count} figured_out items to facts.")
+
                     # V2: Reset guesses and figured_out for the new learning item
                     self.prev_guesses = []
                     self.prev_figured_out = []
