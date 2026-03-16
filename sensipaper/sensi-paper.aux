@@ -1,0 +1,144 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{arcprize2024arcagi}
+\citation{wei2022chain,wang2023selfconsistency,yuksekgonul2025tttdiscover}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:intro}{{1}{1}{Introduction}{section.1}{}}
+\citation{zheng2024judging}
+\citation{arcprize2024arcagi}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Preliminaries}{2}{section.2}\protected@file@percent }
+\newlabel{sec:prelim}{{2}{2}{Preliminaries}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}ARC-AGI-3 Environment}{2}{subsection.2.1}\protected@file@percent }
+\newlabel{sec:arcagi}{{2.1}{2}{ARC-AGI-3 Environment}{subsection.2.1}{}}
+\citation{kaelbling1998planning}
+\citation{wei2022chain}
+\citation{wang2023selfconsistency}
+\citation{sun2024learning}
+\citation{yuksekgonul2025tttdiscover}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}POMDP Formulation}{3}{subsection.2.2}\protected@file@percent }
+\newlabel{sec:pomdp}{{2.2}{3}{POMDP Formulation}{subsection.2.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Test-Time Learning}{3}{subsection.2.3}\protected@file@percent }
+\newlabel{sec:ttl}{{2.3}{3}{Test-Time Learning}{subsection.2.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Sensi v1: Two-Player Architecture}{3}{section.3}\protected@file@percent }
+\newlabel{sec:v1}{{3}{3}{Sensi v1: Two-Player Architecture}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Observer and Actor}{3}{subsection.3.1}\protected@file@percent }
+\newlabel{eq:player1}{{3}{3}{Observer and Actor}{equation.3}{}}
+\newlabel{eq:player2}{{4}{3}{Observer and Actor}{equation.4}{}}
+\citation{pathak2017curiosity,schmidhuber1991curious}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Stochastic Exploration via Confidence-Modulated Agency}{4}{subsection.3.2}\protected@file@percent }
+\newlabel{sec:stochastic}{{3.2}{4}{Stochastic Exploration via Confidence-Modulated Agency}{subsection.3.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Results and Limitations}{4}{subsection.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces \textbf  {Sensi v2 architecture.} Each turn involves up to five LLM calls orchestrated through a pipeline. The SQLite database serves as the control plane: all agent state resides in database tables that are queried to construct prompts and updated with each turn's outputs. The curriculum state machine (left) manages learning progression, promoting figured-out items to facts when a learning item is completed. MetricGen (LLM$_2$) runs only once when a new learning item is activated.}}{5}{figure.1}\protected@file@percent }
+\newlabel{fig:v2_arch}{{1}{5}{\textbf {Sensi v2 architecture.} Each turn involves up to five LLM calls orchestrated through a pipeline. The SQLite database serves as the control plane: all agent state resides in database tables that are queried to construct prompts and updated with each turn's outputs. The curriculum state machine (left) manages learning progression, promoting figured-out items to facts when a learning item is completed. MetricGen (LLM$_2$) runs only once when a new learning item is activated}{figure.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Sensi v2: Curriculum Learning with Programmable Context}{5}{section.4}\protected@file@percent }
+\newlabel{sec:v2}{{4}{5}{Sensi v2: Curriculum Learning with Programmable Context}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Turn Architecture}{5}{subsection.4.1}\protected@file@percent }
+\newlabel{sec:turn}{{4.1}{5}{Turn Architecture}{subsection.4.1}{}}
+\newlabel{eq:pipeline}{{8}{5}{Turn Architecture}{equation.8}{}}
+\newlabel{lst:framediff}{{1}{5}{Frame differencing module}{lstlisting.1}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}Frame differencing module.}{5}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Learning Queue and State Machine}{6}{subsection.4.2}\protected@file@percent }
+\newlabel{sec:curriculum}{{4.2}{6}{Learning Queue and State Machine}{subsection.4.2}{}}
+\newlabel{lst:curriculum}{{2}{6}{Curriculum initialization}{lstlisting.2}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}Curriculum initialization.}{6}{lstlisting.2}\protected@file@percent }
+\newlabel{eq:active}{{9}{6}{Learning Queue and State Machine}{equation.9}{}}
+\newlabel{eq:promotion}{{10}{6}{Learning Queue and State Machine}{equation.10}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces \textbf  {Learning item state machine.} Each curriculum item progresses through three states. The self-loop on \texttt  {learning} represents repeated evaluation until the sense score meets the threshold $\tau $. Upon completion, accumulated figured-out items are promoted to facts, creating a knowledge accumulation chain.}}{7}{figure.2}\protected@file@percent }
+\newlabel{fig:state_machine}{{2}{7}{\textbf {Learning item state machine.} Each curriculum item progresses through three states. The self-loop on \texttt {learning} represents repeated evaluation until the sense score meets the threshold $\tau $. Upon completion, accumulated figured-out items are promoted to facts, creating a knowledge accumulation chain}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Sense Scoring: LLM-as-Judge for Learning Progress}{7}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:sense}{{4.3}{7}{Sense Scoring: LLM-as-Judge for Learning Progress}{subsection.4.3}{}}
+\newlabel{lst:metricgen}{{3}{7}{Dynamic metric generation via DSPy}{lstlisting.3}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}Dynamic metric generation via DSPy.}{7}{lstlisting.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces \textbf  {Database schema.} Six SQLite tables constitute the agent's externalized cognitive state.}}{8}{table.1}\protected@file@percent }
+\newlabel{tab:schema}{{1}{8}{\textbf {Database schema.} Six SQLite tables constitute the agent's externalized cognitive state}{table.1}{}}
+\newlabel{lst:sense}{{4}{8}{Sense scoring via DSPy}{lstlisting.4}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}Sense scoring via DSPy.}{8}{lstlisting.4}\protected@file@percent }
+\newlabel{eq:transition}{{11}{8}{Sense Scoring: LLM-as-Judge for Learning Progress}{equation.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Database as Control Plane}{8}{subsection.4.4}\protected@file@percent }
+\newlabel{sec:database}{{4.4}{8}{Database as Control Plane}{subsection.4.4}{}}
+\newlabel{eq:prompt}{{12}{8}{Database as Control Plane}{equation.12}{}}
+\citation{schmidhuber1991curious,pathak2017curiosity}
+\citation{sutton1998reinforcement}
+\citation{khattab2023dspy}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces \textbf  {Sense score progression over turns} (illustrative). The agent's sense score for each curriculum item rises toward the threshold $\tau = 8$ as it accumulates figured-out items. Vertical dashed lines mark curriculum transitions where one item is completed and the next begins. The entire curriculum is completed in approximately 32 turns. Scores are representative of observed behavior; exact per-turn values vary across runs.}}{9}{figure.3}\protected@file@percent }
+\newlabel{fig:sense_timeline}{{3}{9}{\textbf {Sense score progression over turns} (illustrative). The agent's sense score for each curriculum item rises toward the threshold $\tau = 8$ as it accumulates figured-out items. Vertical dashed lines mark curriculum transitions where one item is completed and the next begins. The entire curriculum is completed in approximately 32 turns. Scores are representative of observed behavior; exact per-turn values vary across runs}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}POMDP with Internal Reward}{9}{subsection.4.5}\protected@file@percent }
+\newlabel{sec:pomdp_v2}{{4.5}{9}{POMDP with Internal Reward}{subsection.4.5}{}}
+\newlabel{eq:epistemic}{{13}{9}{POMDP with Internal Reward}{equation.13}{}}
+\newlabel{eq:transition_dynamics}{{14}{9}{POMDP with Internal Reward}{equation.14}{}}
+\newlabel{eq:policy}{{15}{9}{POMDP with Internal Reward}{equation.15}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces \textbf  {Architectural comparison of Sensi v1 and v2.} V1 (left) uses a simple two-player loop with shared hypothesis lists. V2 (right) preserves the Player$_1$/Player$_2$ core (blue) but adds frame differencing, dynamic metric generation, sense scoring, and the database-as-control-plane (red/orange). The two-player core is embedded within a richer learning infrastructure.}}{10}{figure.4}\protected@file@percent }
+\newlabel{fig:v1_v2}{{4}{10}{\textbf {Architectural comparison of Sensi v1 and v2.} V1 (left) uses a simple two-player loop with shared hypothesis lists. V2 (right) preserves the Player$_1$/Player$_2$ core (blue) but adds frame differencing, dynamic metric generation, sense scoring, and the database-as-control-plane (red/orange). The two-player core is embedded within a richer learning infrastructure}{figure.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{10}{section.5}\protected@file@percent }
+\newlabel{sec:experiments}{{5}{10}{Experiments}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Setup}{10}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Baselines}{10}{subsection.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces \textbf  {Comparison of Sensi versions and baselines.} Sample efficiency is measured as the number of game interactions to complete a learning or exploration phase. V2 achieves dramatically higher sample efficiency despite solving fewer levels.}}{11}{table.2}\protected@file@percent }
+\newlabel{tab:comparison}{{2}{11}{\textbf {Comparison of Sensi versions and baselines.} Sample efficiency is measured as the number of game interactions to complete a learning or exploration phase. V2 achieves dramatically higher sample efficiency despite solving fewer levels}{table.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Results and Analysis}{11}{section.6}\protected@file@percent }
+\newlabel{sec:results}{{6}{11}{Results and Analysis}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Task Performance}{11}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Curriculum Execution}{11}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Sample Efficiency}{11}{subsection.6.3}\protected@file@percent }
+\newlabel{sec:efficiency}{{6.3}{11}{Sample Efficiency}{subsection.6.3}{}}
+\newlabel{eq:efficiency}{{16}{11}{Sample Efficiency}{equation.16}{}}
+\citation{yuksekgonul2025tttdiscover}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Failure Analysis: Self-Consistent Hallucination Cascade}{12}{subsection.6.4}\protected@file@percent }
+\newlabel{sec:failure}{{6.4}{12}{Failure Analysis: Self-Consistent Hallucination Cascade}{subsection.6.4}{}}
+\newlabel{eq:cascade}{{17}{12}{Failure Analysis: Self-Consistent Hallucination Cascade}{equation.17}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{12}{section.7}\protected@file@percent }
+\newlabel{sec:discussion}{{7}{12}{Discussion}{section.7}{}}
+\citation{wei2022chain,wang2023selfconsistency}
+\citation{sun2024learning,yuksekgonul2025tttdiscover}
+\citation{yuksekgonul2025tttdiscover}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces \textbf  {Self-consistent hallucination cascade.} A frame differencing error (step~1) propagates through the pipeline. Player$_1$ builds a wrong hypothesis (step~2), which the sense scorer validates because it is \emph  {internally consistent} (step~3). This triggers premature completion (step~4), and the wrong knowledge contaminates subsequent learning items (step~5). The ground truth (green, bottom-left) never enters the pipeline.}}{13}{figure.5}\protected@file@percent }
+\newlabel{fig:cascade}{{5}{13}{\textbf {Self-consistent hallucination cascade.} A frame differencing error (step~1) propagates through the pipeline. Player$_1$ builds a wrong hypothesis (step~2), which the sense scorer validates because it is \emph {internally consistent} (step~3). This triggers premature completion (step~4), and the wrong knowledge contaminates subsequent learning items (step~5). The ground truth (green, bottom-left) never enters the pipeline}{figure.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Related Work}{13}{section.8}\protected@file@percent }
+\newlabel{sec:related}{{8}{13}{Related Work}{section.8}{}}
+\citation{wang2024voyager}
+\citation{yao2023react}
+\citation{shinn2024reflexion}
+\citation{wu2024spring}
+\citation{bengio2009curriculum}
+\citation{portelas2020automatic}
+\citation{portelas2020automatic}
+\citation{zheng2024judging}
+\citation{madaan2024selfrefine}
+\citation{chollet2019measure}
+\citation{johnson2021program}
+\citation{arcprize2024arcagi}
+\@writefile{toc}{\contentsline {section}{\numberline {9}Limitations and Future Work}{14}{section.9}\protected@file@percent }
+\newlabel{sec:limitations}{{9}{14}{Limitations and Future Work}{section.9}{}}
+\bibstyle{plainnat}
+\bibdata{references}
+\bibcite{arcprize2024arcagi}{{1}{2024}{{ARC Prize Foundation}}{{}}}
+\bibcite{bengio2009curriculum}{{2}{2009}{{Bengio et~al.}}{{Bengio, Louradour, Collobert, and Weston}}}
+\bibcite{chollet2019measure}{{3}{2019}{{Chollet}}{{}}}
+\bibcite{kaelbling1998planning}{{4}{1998}{{Kaelbling et~al.}}{{Kaelbling, Littman, and Cassandra}}}
+\bibcite{khattab2023dspy}{{5}{2023}{{Khattab et~al.}}{{Khattab, Singhvi, Maheshwari, Zhang, Santhanam, Vardhamanan, Haq, Sharma, Joshi, Mober, et~al.}}}
+\bibcite{madaan2024selfrefine}{{6}{2024}{{Madaan et~al.}}{{Madaan, Tandon, Gupta, Hallinan, Gao, Wiegreffe, Alon, Dziri, Prabhumoye, Yang, et~al.}}}
+\bibcite{pathak2017curiosity}{{7}{2017}{{Pathak et~al.}}{{Pathak, Agrawal, Efros, and Darrell}}}
+\@writefile{toc}{\contentsline {section}{\numberline {10}Conclusion}{15}{section.10}\protected@file@percent }
+\newlabel{sec:conclusion}{{10}{15}{Conclusion}{section.10}{}}
+\bibcite{portelas2020automatic}{{8}{2020}{{Portelas et~al.}}{{Portelas, Colas, Weng, Hofmann, and Oudeyer}}}
+\bibcite{schmidhuber1991curious}{{9}{1991}{{Schmidhuber}}{{}}}
+\bibcite{shinn2024reflexion}{{10}{2024}{{Shinn et~al.}}{{Shinn, Cassano, Gopinath, Narasimhan, and Yao}}}
+\bibcite{sun2024learning}{{11}{2024}{{Sun et~al.}}{{Sun, Li, Dalal, Xu, Vikram, Zhang, Dubois, Chen, Wang, Kumbhar, et~al.}}}
+\bibcite{sutton1998reinforcement}{{12}{2018}{{Sutton and Barto}}{{}}}
+\bibcite{wang2024voyager}{{13}{2024}{{Wang et~al.}}{{Wang, Xie, Jiang, Mandlekar, Xiao, Zhu, Fan, and Anandkumar}}}
+\bibcite{wang2023selfconsistency}{{14}{2023}{{Wang et~al.}}{{Wang, Wei, Schuurmans, Le, Chi, Narang, Chowdhery, and Zhou}}}
+\bibcite{wei2022chain}{{15}{2022}{{Wei et~al.}}{{Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le, and Zhou}}}
+\bibcite{wu2024spring}{{16}{2023}{{Wu et~al.}}{{Wu, Xie, Shi, Yu, Liu, Liu, Foerster, and Clark}}}
+\bibcite{johnson2021program}{{17}{2023}{{Xu et~al.}}{{Xu, Khalil, and Sanner}}}
+\bibcite{yao2023react}{{18}{2023}{{Yao et~al.}}{{Yao, Zhao, Yu, Du, Shafran, Narasimhan, and Cao}}}
+\bibcite{yuksekgonul2025tttdiscover}{{19}{2025}{{Yuksekgonul et~al.}}{{Yuksekgonul, Koceja, Li, Bianchi, McCaleb, Wang, Kautz, Choi, Zou, Guestrin, and Sun}}}
+\bibcite{zheng2024judging}{{20}{2024}{{Zheng et~al.}}{{Zheng, Chiang, Sheng, Zhuang, Wu, Zhuang, Lin, Li, Li, Xing, et~al.}}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Sensi v1: Discovered Game Knowledge}{17}{appendix.A}\protected@file@percent }
+\newlabel{app:v1_knowledge}{{A}{17}{Sensi v1: Discovered Game Knowledge}{appendix.A}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Algorithm: Sensi v2 Turn Execution}{18}{appendix.B}\protected@file@percent }
+\newlabel{app:algorithm}{{B}{18}{Algorithm: Sensi v2 Turn Execution}{appendix.B}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {1}{\ignorespaces Sensi v2: Single Turn Execution}}{18}{algorithm.1}\protected@file@percent }
+\newlabel{alg:turn}{{1}{18}{Algorithm: Sensi v2 Turn Execution}{algorithm.1}{}}
+\gdef \@abspage@last{18}
