@@ -26,19 +26,34 @@ The paper turns the negative result into a clear contribution: the bottleneck ha
 - Precise failure diagnosis + actionable next steps (hybrid pixel analysis)
 - Full DSPy implementation + reproducible logs
 
-## 🚀 Quick Start & Demo
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) package manager
+- An [ARC-AGI-3 API key](https://three.arcprize.org/)
+- A [Gemini API key](https://aistudio.google.com/)
+
+### Setup & Run
 
 ```bash
-git clone https://github.com/mohsenarjmandi/Sensi.git
-cd Sensi
-pip install -r requirements.txt
+git clone https://github.com/arjmandi/arc-agi-3.git
+cd arc-agi-3
 
-# Run the full 32-turn curriculum demo (Gemini 3.1 Pro or ChatGPT 5.1)
-python run_sensi_v2.py --game LS20 --demo
+# Configure API keys
+cp .env.example .env
+# Edit .env and set ARC_API_KEY and GEMINI_API_KEY
+
+# Install dependencies and run SensiLLM against all games
+uv run main.py --agent=sensillm
+
+# Or target specific games
+uv run main.py --agent=sensillm --game=ls20
 ```
 
 📊 **Colab Notebook** (one-click):
-[Open in Colab → Sensi v2 Curriculum Run](https://colab.research.google.com/github/mohsenarjmandi/Sensi/blob/main/notebooks/Sensi_v2_Demo.ipynb)
+[Open in Colab → Sensi v2 Demo](https://colab.research.google.com/github/arjmandi/arc-agi-3/blob/main/notebooks/sensi_v2_demo.ipynb)
 
 ## 🏗️ Architecture Highlights
 
