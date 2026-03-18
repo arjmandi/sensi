@@ -1,54 +1,85 @@
-# SensiLLM
+# Sensi: Learn One Thing at a Time
+**Curriculum-Based Test-Time Learning for LLM Game Agents**
 
-A multimodal learning agent for [ARC-AGI-3](https://three.arcprize.org/) that uses a two-player cooperative strategy with persistent learning across game turns.
+[![arXiv](https://img.shields.io/badge/arXiv-2603.xxxxx-b31b1b.svg)](https://arxiv.org/abs/2603.xxxxx)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
+[![DSPy](https://img.shields.io/badge/built_with-DSPy-orange.svg)](https://dspy.ai)
 
-For the design and research behind this agent, see [sensi.md](sensi.md) and the paper in [sensipaper/](sensipaper/).
+**50–94× better sample efficiency on ARC-AGI-3** while openly diagnosing the exact failure mode.
 
-## How it works
+## 🎯 What is Sensi?
 
-SensiLLM splits game-playing into two cooperative roles:
+Sensi is a neuro-symbolic LLM agent framework that forces the model to **learn one thing at a time** at test time — no retraining, no gradient updates.
+It turns the context window into a programmable database and uses an external state machine + dynamic LLM-as-judge to drive curriculum-style learning.
 
-- **Player 1 (Observer)**: Sees the game frames, analyzes differences between turns, and maintains two lists — `guesses` (hypotheses) and `figured_out` (confirmed knowledge).
-- **Player 2 (Actor)**: Reads Player 1's lists and chooses the next action to either test a guess or act on confirmed knowledge.
+Two iterations:
+- **Sensi v1** (two-player Observer/Actor) → solved 2 levels with perfect reproducibility (pass@10 = pass@1)
+- **Sensi v2** (full curriculum + SQLite control plane) → solved 0 levels but finished the entire learning curriculum in **~32 turns** (vs 1,600–3,000 reported by baselines)
 
-A learning system tracks what the agent still needs to learn, scores its understanding via a sense scorer, and promotes confirmed guesses into persistent facts stored in SQLite.
+The paper turns the negative result into a clear contribution: the bottleneck has shifted from "learning efficiency" to "perceptual grounding" — and we show exactly where it breaks (self-consistent hallucination cascade).
 
-## Setup
+## ✨ Key Results & Contributions
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
+- 50–94× sample efficiency improvement on ARC-AGI-3
+- Novel **database-as-control-plane** pattern (entire cognitive state lives in SQLite → fully steerable)
+- Dynamic LLM-as-judge with generated rubrics + external state machine
+- Precise failure diagnosis + actionable next steps (hybrid pixel analysis)
+- Full DSPy implementation + reproducible logs
 
-```bash
-cp .env.example .env
-```
-
-Set your API keys in `.env`:
-- `ARC_API_KEY` — from [three.arcprize.org](https://three.arcprize.org/)
-- `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/)
-
-## Run
-
-```bash
-uv run main.py --agent=sensillm
-```
-
-Filter to specific games:
+## 🚀 Quick Start & Demo
 
 ```bash
-uv run main.py --agent=sensillm --game=ls20,pls5
+git clone https://github.com/mohsenarjmandi/Sensi.git
+cd Sensi
+pip install -r requirements.txt
+
+# Run the full 32-turn curriculum demo (Gemini 3.1 Pro or ChatGPT 5.1)
+python run_sensi_v2.py --game LS20 --demo
 ```
 
-## Architecture
+📊 **Colab Notebook** (one-click):
+[Open in Colab → Sensi v2 Curriculum Run](https://colab.research.google.com/github/mohsenarjmandi/Sensi/blob/main/notebooks/Sensi_v2_Demo.ipynb)
 
+## 🏗️ Architecture Highlights
+
+- **v1**: Observer + Actor separation (perception vs action)
+- **v2**: FrameDiff → MetricGen → SenseScore → Player1 → Player2 pipeline
+  + SQLite control plane + curriculum state machine
+
+(See Figure 1 & 4 in the paper for clean diagrams.)
+
+## 📄 Paper & Citation
+
+**Sensi: Learn One Thing at a Time — Curriculum-Based Test-Time Learning for LLM Game Agents**
+Mohsen Arjmandi (CTO, evolutionID)
+arXiv preprint (submitted March 2026) — link live within 48 hours
+
+```bibtex
+@misc{arjmandi2026sensi,
+  title={Sensi: Learn One Thing at a Time — Curriculum-Based Test-Time Learning for LLM Game Agents},
+  author={Mohsen Arjmandi},
+  year={2026},
+  eprint={2603.xxxxx},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI}
+}
 ```
-agents/
-├── agent.py        # Base Agent class (game loop, API calls, recording)
-├── sensi_llm.py    # SensiLLM agent + DSPy signatures
-├── structs.py      # Data models (GameAction, FrameData, GameState, Scorecard)
-├── swarm.py        # Multi-agent orchestration (one thread per game)
-├── recorder.py     # JSONL recording/playback
-└── tracing.py      # Optional AgentOps observability
-```
 
-## License
+## 📍 Status & Roadmap (March 2026)
 
-This project is licensed under the MIT License.
+- [x] Paper submitted to arXiv (cs.AI + cs.LG)
+- [x] Full code + Colab
+- [ ] v3 perception fix (hybrid programmatic + LLM diff) → expected +1–2 solves
+- [ ] Submit to NeurIPS 2026 Agentic AI / Test-Time Compute workshops
+
+## 🔗 Connect
+
+- **LinkedIn**: [linkedin.com/in/marjmandi](https://linkedin.com/in/marjmandi)
+- **Email**: mohsen.arjmandi@gmail.com
+- **Current role**: CTO @ evolutionID (production agent systems + GRID patent)
+
+Built as independent research while leading a PIAM company. Open to collaboration, feedback, or test-time / agent-scaling discussions.
+
+---
+
+⭐ **Star this repo** if you're working on test-time compute, continual learning, neuro-symbolic agents, or ARC-AGI!
