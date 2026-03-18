@@ -38,8 +38,8 @@ The paper turns the negative result into a clear contribution: the bottleneck ha
 ### Setup & Run
 
 ```bash
-git clone https://github.com/arjmandi/arc-agi-3.git
-cd arc-agi-3
+git clone https://github.com/arjmandi/sensi.git
+cd sensi
 
 # Configure API keys
 cp .env.example .env
@@ -53,7 +53,7 @@ uv run main.py --agent=sensillm --game=ls20
 ```
 
 📊 **Colab Notebook** (one-click):
-[Open in Colab → Sensi v2 Demo](https://colab.research.google.com/github/arjmandi/arc-agi-3/blob/main/notebooks/sensi_v2_demo.ipynb)
+[Open in Colab → Sensi v2 Demo](https://colab.research.google.com/github/arjmandi/sensi/blob/main/notebooks/sensi_v2_demo.ipynb)
 
 ## 🏗️ Architecture Highlights
 
@@ -62,6 +62,8 @@ uv run main.py --agent=sensillm --game=ls20
   + SQLite control plane + curriculum state machine
 
 (See Figure 1 & 4 in the paper for clean diagrams.)
+
+For the research journey from early intuitions to the final design, see [background/BACKGROUND.md](background/BACKGROUND.md).
 
 ## 📄 Paper & Citation
 
