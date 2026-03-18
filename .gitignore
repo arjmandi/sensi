@@ -2,20 +2,42 @@
 .DS_Store
 *.log
 *.env
-!.env-example
+!.env.example
 
 # Cache
 .ruff_cache/
 .mypy_cache/
 **/__pycache__/
+dsp_cache/
+local_cache/
 
 # IDE settings
 .vscode/
+.idea/
+
+# Claude Code
+.claude/
 
 # Recordings
 recordings/*.recording.jsonl
 tests/recordings/*.recording.jsonl
-tests/recordings/not-a-recording.txt
 
-# Long-term memory
-memory.db
+# Runtime database
+agent_state.db
+*.db
+
+# Node artifacts
+node_modules/
+package-lock.json
+
+# LaTeX build artifacts
+sensipaper/*.aux
+sensipaper/*.bbl
+sensipaper/*.blg
+sensipaper/*.log
+sensipaper/*.out
+sensipaper/missfont.log
+sensipaper/.claude/
+
+# UV lock (regenerated)
+uv.lock

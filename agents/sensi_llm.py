@@ -1,40 +1,41 @@
-
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, List, Optional
 
+import io
 import json
 import logging
 import os
-import openai
-from openai import OpenAI as OpenAIClient
 import sqlite3
 import textwrap
-from typing import ClassVar, List
+
 from PIL import Image
-import io
 from dspy.adapters.image_utils import Image as DSPyImage, encode_image
 import litellm
+
 litellm.cache = None
 
+from .agent import Agent
+from .structs import FrameData, GameAction, GameState, Scorecard
 
-from ..agent import Agent
-from ..structs import FrameData, GameAction, GameState, Scorecard
-
-# Ensure DSPy/dsp cache stays inside the project workspace so we
+# Ensure DSPy cache stays inside the project workspace so we
 # don't rely on a writable home directory (important in sandboxed runs).
 os.environ.setdefault("DSP_CACHEDIR", os.path.join(os.getcwd(), "dsp_cache"))
 import dspy
+
+logger = logging.getLogger()
+
+
 def configure_llm(model: str = "gemini/gemini-3-pro-preview") -> None:
+    """Configure DSPy with the specified LLM model."""
     try:
-        # Check for Google/Gemini API key in environment variables
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        
+
         lm_kwargs = {"cache": False}
         if api_key and "gemini" in model.lower():
             lm_kwargs["api_key"] = api_key
-            
+
         lm = dspy.LM(model, **lm_kwargs)
         lm.kwargs.pop("max_completion_tokens", None)
         lm.kwargs["max_tokens"] = 4000
@@ -43,392 +44,35 @@ def configure_llm(model: str = "gemini/gemini-3-pro-preview") -> None:
     except Exception as e:
         logger.warning(f"Failed to configure LLM with model {model}: {e}")
 
-# Call this on import by default (safe if configured elsewhere).
+
 configure_llm()
-logger = logging.getLogger()
 
-class LLM(Agent):
-    """An agent that uses a base LLM model to play games."""
 
-    MAX_ACTIONS: int = 80
-    DO_OBSERVATION: bool = True
-    REASONING_EFFORT: Optional[str] = None
-    MODEL_REQUIRES_TOOLS: bool = False
+class DecisionType(Enum):
+    GUESS = 0
+    INFORMED = 1
 
+
+class SensiLLM(Agent):
+    """An agent that uses multimodal LLMs with persistent learning to play ARC-AGI-3 games.
+
+    Uses a two-player cooperative strategy:
+    - Player 1 (Observer): Analyzes frames, maintains guesses and figured_out lists
+    - Player 2 (Actor): Chooses actions based on Player 1's observations
+
+    Learning state is persisted in SQLite across turns and games.
+    """
+
+    MAX_ACTIONS: int = 20
+    DO_OBSERVATION: bool = False
+    MODEL: str = "gemini/gemini-3.1-pro-preview"
     MESSAGE_LIMIT: int = 10
-    MODEL: str = "gpt-4o-mini"
-    messages: list[dict[str, Any]]
-    token_counter: int
-    score_counter: int
-
-    _latest_tool_call_id: str = "call_12345"
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.messages = []
-        self.token_counter = 0
-        self.game_state = GameState.NOT_PLAYED
-
-    @property
-    def name(self) -> str:
-        obs = "with-observe" if self.DO_OBSERVATION else "no-observe"
-        sanitized_model_name = self.MODEL.replace("/", "-").replace(":", "-")
-        name = f"{super().name}.{sanitized_model_name}.{obs}"
-        if self.REASONING_EFFORT:
-            name += f".{self.REASONING_EFFORT}"
-        return name
-
-    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
-        """Decide if the agent is done playing or not."""
-        return True if self.game_state == GameState.WIN else False
-
-
-    def choose_action(
-        self, frames: list[FrameData], latest_frame: FrameData
-    ) -> GameAction:
-        """Choose which action the Agent should take, fill in any arguments, and return it."""
-
-        logging.getLogger("openai").setLevel(logging.CRITICAL)
-        logging.getLogger("httpx").setLevel(logging.CRITICAL)
-
-        client = OpenAIClient(api_key=os.environ.get("OPENAI_API_KEY", ""))
-
-        functions = self.build_functions()
-        tools = self.build_tools()
-
-        # if latest_frame.state in [GameState.NOT_PLAYED]:
-        if len(self.messages) == 0:
-            # have to manually trigger the first reset to kick off agent
-            user_prompt = self.build_user_prompt(latest_frame)
-            message0 = {"role": "user", "content": user_prompt}
-            self.push_message(message0)
-            if self.MODEL_REQUIRES_TOOLS:
-                message1 = {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "id": self._latest_tool_call_id,
-                            "type": "function",
-                            "function": {
-                                "name": GameAction.RESET.name,
-                                "arguments": json.dumps({}),
-                            },
-                        }
-                    ],
-                }
-            else:
-                message1 = {
-                    "role": "assistant",
-                    "function_call": {"name": "RESET", "arguments": json.dumps({})},  # type: ignore
-                }
-            self.push_message(message1)
-            action = GameAction.RESET
-            return action
-
-        # let the agent comment observations before choosing action
-        # on the first turn, this will be in response to RESET action
-        function_name = latest_frame.action_input.id.name
-        function_response = self.build_func_resp_prompt(latest_frame)
-        if self.MODEL_REQUIRES_TOOLS:
-            message2 = {
-                "role": "tool",
-                "tool_call_id": self._latest_tool_call_id,
-                "content": str(function_response),
-            }
-        else:
-            message2 = {
-                "role": "function",
-                "name": function_name,
-                "content": str(function_response),
-            }
-        self.push_message(message2)
-
-        if self.DO_OBSERVATION:
-            logger.info("Sending to Assistant for observation...")
-            try:
-                create_kwargs = {
-                    "model": self.MODEL,
-                    "messages": self.messages,
-                }
-                if self.REASONING_EFFORT is not None:
-                    create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-                response = client.chat.completions.create(**create_kwargs)
-            except openai.BadRequestError as e:
-                logger.info(f"Message dump: {self.messages}")
-                raise e
-            self.track_tokens(
-                response.usage.total_tokens, response.choices[0].message.content
-            )
-            message3 = {
-                "role": "assistant",
-                "content": response.choices[0].message.content,
-            }
-            logger.info(f"Assistant: {response.choices[0].message.content}")
-            self.push_message(message3)
-
-        # now ask for the next action
-        user_prompt = self.build_user_prompt(latest_frame)
-        message4 = {"role": "user", "content": user_prompt}
-        self.push_message(message4)
-
-        name = GameAction.ACTION5.name  # default action if LLM doesnt call one
-        arguments = None
-        message5 = None
-
-        if self.MODEL_REQUIRES_TOOLS:
-            logger.info("Sending to Assistant for action...")
-            try:
-                create_kwargs = {
-                    "model": self.MODEL,
-                    "messages": self.messages,
-                    "tools": tools,
-                    "tool_choice": "required",
-                }
-                if self.REASONING_EFFORT is not None:
-                    create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-                response = client.chat.completions.create(**create_kwargs)
-            except openai.BadRequestError as e:
-                logger.info(f"Message dump: {self.messages}")
-                raise e
-            self.track_tokens(response.usage.total_tokens)
-            message5 = response.choices[0].message
-            logger.debug(f"... got response {message5}")
-            tool_call = message5.tool_calls[0]
-            self._latest_tool_call_id = tool_call.id
-            logger.debug(
-                f"Assistant: {tool_call.function.name} ({tool_call.id}) {tool_call.function.arguments}"
-            )
-            name = tool_call.function.name
-            arguments = tool_call.function.arguments
-
-            # sometimes the model will call multiple tools which isnt allowed
-            extra_tools = message5.tool_calls[1:]
-            for tc in extra_tools:
-                logger.info(
-                    "Error: assistant called more than one action, only using the first."
-                )
-                message_extra = {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": "Error: assistant can only call one action (tool) at a time. default to only the first chosen action.",
-                }
-                self.push_message(message_extra)
-        else:
-            logger.info("Sending to Assistant for action...")
-            try:
-                create_kwargs = {
-                    "model": self.MODEL,
-                    "messages": self.messages,
-                    "functions": functions,
-                    "function_call": "auto",
-                }
-                if self.REASONING_EFFORT is not None:
-                    create_kwargs["reasoning_effort"] = self.REASONING_EFFORT
-                response = client.chat.completions.create(**create_kwargs)
-            except openai.BadRequestError as e:
-                logger.info(f"Message dump: {self.messages}")
-                raise e
-            self.track_tokens(response.usage.total_tokens)
-            message5 = response.choices[0].message
-            function_call = message5.function_call
-            logger.debug(f"Assistant: {function_call.name} {function_call.arguments}")
-            name = function_call.name
-            arguments = function_call.arguments
-
-        if message5:
-            self.push_message(message5)
-        action_id = name
-        if arguments:
-            try:
-                data = json.loads(arguments) or {}
-            except Exception as e:
-                data = {}
-                logger.warning(f"JSON parsing error on LLM function response: {e}")
-        else:
-            data = {}
-
-        action = GameAction.from_name(action_id)
-        action.set_data(data)
-        return action
-
-    def track_tokens(self, tokens: int, message: str = "") -> None:
-        self.token_counter += tokens
-        if hasattr(self, "recorder") and not self.is_playback:
-            self.recorder.record(
-                {
-                    "tokens": tokens,
-                    "total_tokens": self.token_counter,
-                    "assistant": message,
-                }
-            )
-        logger.info(f"Received {tokens} tokens, new total {self.token_counter}")
-
-
-    def push_message(self, message: dict[str, Any]) -> list[dict[str, Any]]:
-        """Push a message onto stack, store up to MESSAGE_LIMIT with FIFO."""
-        self.messages.append(message)
-        if len(self.messages) > self.MESSAGE_LIMIT:
-            self.messages = self.messages[-self.MESSAGE_LIMIT :]
-        if self.MODEL_REQUIRES_TOOLS:
-            # cant clip the message list between tool and tool_call else llm will error
-            while (
-                self.messages[0].get("role")
-                if isinstance(self.messages[0], dict)
-                else getattr(self.messages[0], "role", None)
-            ) == "tool":
-                self.messages.pop(0)
-        return self.messages
-
-    def build_functions(self) -> list[dict[str, Any]]:
-        """Build JSON function description of game actions for LLM."""
-        empty_params: dict[str, Any] = {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        }
-        functions: list[dict[str, Any]] = [
-            {
-                "name": GameAction.RESET.name,
-                "description": "Start or restart a game. Must be called first when NOT_PLAYED or after GAME_OVER to play again.",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION1.name,
-                "description": "Send this simple input action (1, W, Up).",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION2.name,
-                "description": "Send this simple input action (2, S, Down).",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION3.name,
-                "description": "Send this simple input action (3, A, Left).",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION4.name,
-                "description": "Send this simple input action (4, D, Right).",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION5.name,
-                "description": "Send this simple input action (5, Enter, Spacebar, Delete).",
-                "parameters": empty_params,
-            },
-            {
-                "name": GameAction.ACTION6.name,
-                "description": "Send this complex input action (6, Click, Point).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "x": {
-                            "type": "string",
-                            "description": "Coordinate X which must be Int<0,63>",
-                        },
-                        "y": {
-                            "type": "string",
-                            "description": "Coordinate Y which must be Int<0,63>",
-                        },
-                    },
-                    "required": ["x", "y"],
-                    "additionalProperties": False,
-                },
-            },
-        ]
-        return functions
-
-    def build_tools(self) -> list[dict[str, Any]]:
-        """Support models that expect tool_call format."""
-        functions = self.build_functions()
-        tools: list[dict[str, Any]] = []
-        for f in functions:
-            tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": f["name"],
-                        "description": f["description"],
-                        "parameters": f.get("parameters", {}),
-                        "strict": True,
-                    },
-                }
-            )
-        return tools
-
-    def build_func_resp_prompt(self, latest_frame: FrameData) -> str:
-        return textwrap.dedent(
-            """
-# State:
-{state}
-
-# Score:
-{score}
-
-# Frame:
-{latest_frame}
-
-# TURN:
-Reply with a few sentences of plain-text strategy observation about the frame to inform your next action.
-        """.format(
-                latest_frame=self.pretty_print_3d(latest_frame.frame),
-                score=latest_frame.score,
-                state=latest_frame.state.name,
-            )
-        )
-
-    def build_user_prompt(self, latest_frame: FrameData) -> str:
-        """Build the user prompt for the LLM. Override this method to customize the prompt."""
-        return textwrap.dedent(
-            """
-# CONTEXT:
-You are an agent playing a dynamic game. Your objective is to
-WIN and avoid GAME_OVER while minimizing actions.
-
-One action produces one Frame. One Frame is made of one or more sequential
-Grids. Each Grid is a matrix size INT<0,63> by INT<0,63> filled with
-INT<0,15> values.
-
-# TURN:
-Call exactly one action.
-        """.format()
-        )
-
-    def pretty_print_3d(self, array_3d: list[list[list[Any]]]) -> str:
-        lines = []
-        for i, block in enumerate(array_3d):
-            lines.append(f"Grid {i}:")
-            for row in block:
-                lines.append(f"  {row}")
-            lines.append("")
-        return "\n".join(lines)
-
-    def cleanup(self, *args: Any, **kwargs: Any) -> None:
-        if self._cleanup:
-            if hasattr(self, "recorder") and not self.is_playback:
-                meta = {
-                    "llm_user_prompt": self.build_user_prompt(self.frames[-1]),
-                    "llm_tools": self.build_tools()
-                    if self.MODEL_REQUIRES_TOOLS
-                    else self.build_functions(),
-                    "llm_tool_resp_prompt": self.build_func_resp_prompt(
-                        self.frames[-1]
-                    ),
-                }
-                self.recorder.record(meta)
-        super().cleanup(*args, **kwargs)
-
-class SensiLLM(LLM):
-    """Similar to LLM, with more senses."""
-    MAX_ACTIONS = 20
-    DO_OBSERVATION = False
-    MODEL = "gemini/gemini-3.1-pro-preview"
-    MESSAGE_LIMIT = 10
-    REASONING_EFFORT = "low"
+    REASONING_EFFORT: str = "low"
     VALID_DT = {"GUESS", "INFORMED"}
-    VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
+    VALID_ACT = {
+        "RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4",
+        "ACTION5", "ACTION6", "ACTION7",
+    }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -436,32 +80,31 @@ class SensiLLM(LLM):
         self.prev_decision_type = 0
         self.prev_action = GameAction.RESET
         self.frame_diff = None
-        self.losing_sequences = []
-        self.current_sequence = []
-        self.prev_guesses = []
-        self.prev_figured_out = []
+        self.losing_sequences: list[list[str]] = []
+        self.current_sequence: list[str] = []
+        self.prev_guesses: list[str] = []
+        self.prev_figured_out: list[str] = []
         self.frame_diff_module = FrameDiffModule()
-        self.turn_id = 0 #incremental id of each turn
+        self.turn_id = 0
         self.game_state = GameState.NOT_PLAYED
-        self.VALID_DT = {"GUESS", "INFORMED"}
-        self.VALID_ACT = {"RESET", "ACTION1", "ACTION2", "ACTION3", "ACTION4", "ACTION5", "ACTION6", "ACTION7"}
+        self.score_counter = 0
         self.agent_db_name = "agent_state.db"
-        conn = sqlite3.connect(self.agent_db_name)
-        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
 
+        conn = sqlite3.connect(self.agent_db_name)
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS guesses (
-                game_id TEXT, 
-                card_id TEXT, 
+                game_id TEXT,
+                card_id TEXT,
                 turn_id INT,
-                gss TEXT, 
+                gss TEXT,
                 PRIMARY KEY (game_id, card_id, turn_id)
             )
         """)
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, turn_id INT,figs TEXT, PRIMARY KEY (game_id, card_id, turn_id)) ")
+            "CREATE TABLE IF NOT EXISTS figured_outs (game_id TEXT, card_id TEXT, turn_id INT, figs TEXT, PRIMARY KEY (game_id, card_id, turn_id))")
         cur.execute(
             "CREATE TABLE IF NOT EXISTS losing_actions_seqs (game_id TEXT, card_id TEXT, turn_id INT, losing_seq TEXT, PRIMARY KEY (game_id, card_id, turn_id))")
         cur.execute("""
@@ -477,8 +120,6 @@ class SensiLLM(LLM):
                 PRIMARY KEY (game_id, card_id, turn_id)
             )
         """)
-
-        # V2: items_to_learn table - stores learning items with state machine and scoring
         cur.execute("""
             CREATE TABLE IF NOT EXISTS items_to_learn (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -492,8 +133,6 @@ class SensiLLM(LLM):
                 UNIQUE(game_id, card_id, item_name)
             )
         """)
-
-        # V2: inputs table - key-value store for frame data, game state, etc.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS inputs (
                 game_id TEXT,
@@ -508,8 +147,22 @@ class SensiLLM(LLM):
         conn.commit()
         conn.close()
 
+    @property
+    def name(self) -> str:
+        obs = "with-observe" if self.DO_OBSERVATION else "no-observe"
+        sanitized_model_name = self.MODEL.replace("/", "-").replace(":", "-")
+        name = f"{super().name}.{sanitized_model_name}.{obs}"
+        if self.REASONING_EFFORT:
+            name += f".{self.REASONING_EFFORT}"
+        return name
+
+    def is_won(self, frames: list[FrameData], latest_frame: FrameData) -> bool:
+        return self.game_state == GameState.WIN
+
+    # ==================== Image Processing ====================
+
     def grid_to_image(self, grid: list[list[list[int]]]) -> Image.Image:
-        """Converts a 3D grid of integers into an example PIL image, stacking grid layers horizontally."""
+        """Converts a 3D grid of integers into a PIL image, stacking grid layers horizontally."""
         color_map = [
             (0, 0, 0),
             (0, 0, 170),
@@ -533,7 +186,6 @@ class SensiLLM(LLM):
         width = len(grid[0][0])
         num_layers = len(grid)
 
-        # Add a small separator between grids if there are multiple layers
         separator_width = 5 if num_layers > 1 else 0
         total_width = (width * num_layers) + (separator_width * (num_layers - 1))
 
@@ -541,9 +193,7 @@ class SensiLLM(LLM):
         pixels = image.load()
 
         for i, grid_layer in enumerate(grid):
-            # If you don't need logging, you can ignore inconsistency checks
             if len(grid_layer) != height or len(grid_layer[0]) != width:
-                # just skip inconsistent layers
                 continue
 
             offset_x = i * (width + separator_width)
@@ -552,22 +202,23 @@ class SensiLLM(LLM):
                     color_index = grid_layer[y][x] % 16
                     pixels[x + offset_x, y] = color_map[color_index]
 
-        scale = 10  # 10x bigger pixels
+        scale = 10
         big_img = image.resize(
-        (image.width * scale, image.height * scale),
-            resample=Image.NEAREST  # keep the pixel-art look
+            (image.width * scale, image.height * scale),
+            resample=Image.NEAREST,
         )
-        if big_img.width > 640: #frame size change means we've either lost or won
+        if big_img.width > 640:  # frame size change means we've either lost or won
             self.game_state = GameState.GAME_OVER
             if self.frames[-1].score > self.score_counter:
-                # self.game_state = GameState.WIN # we comment this to prevent from breaking playing after a level win
                 self.score_counter = self.frames[-1].score
 
         return big_img
 
-    def load_prev_state_for_player1(self, game_id: str, card_id: str):
+    # ==================== State Persistence ====================
+
+    def load_prev_state_for_player1(self, game_id: str, card_id: str) -> None:
         conn = sqlite3.connect(self.agent_db_name)
-        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         game_row = cur.execute(
@@ -580,7 +231,6 @@ class SensiLLM(LLM):
             """,
             (game_id, card_id),
         ).fetchone()
-
 
         self.turn_id = game_row["turn_id"] + 1
         prev_frame_bytes = game_row["prev_frame"]
@@ -613,7 +263,6 @@ class SensiLLM(LLM):
         ).fetchone()
         self.prev_guesses = json.loads(guesses_row["gss"])
 
-
         figout_row = cur.execute(
             """
             SELECT figs
@@ -624,22 +273,17 @@ class SensiLLM(LLM):
             """,
             (game_id, card_id, game_row["turn_id"]),
         ).fetchone()
-        figured_out = json.loads(figout_row["figs"])
-        self.prev_figured_out = figured_out
+        self.prev_figured_out = json.loads(figout_row["figs"])
 
         conn.close()
 
-    # ==================== V2 Helper Methods ====================
+    # ==================== Learning System ====================
 
     def initialize_items_to_learn(self, game_id: str, card_id: str) -> None:
-        """
-        Initialize default learning items for a new game.
-        Called once when the first frame is received.
-        """
+        """Initialize default learning items for a new game."""
         conn = sqlite3.connect(self.agent_db_name)
         cur = conn.cursor()
 
-        # Items that are already known facts (don't need to learn)
         fact_items = [
             "RESET starts the game",
             "all available actions: ACTION1, ACTION2, ACTION3, ACTION4, ACTION5, ACTION6, ACTION7, RESET",
@@ -654,7 +298,6 @@ class SensiLLM(LLM):
                 (game_id, card_id, item_name),
             )
 
-        # Items that need to be learned
         default_items = [
             "learn what each action does in the game",
             "learn how actions affects your energy while playing",
@@ -675,15 +318,11 @@ class SensiLLM(LLM):
         logger.info(f"Initialized {len(fact_items)} facts and {len(default_items)} learning items for game {game_id}")
 
     def get_current_item_to_learn(self, game_id: str, card_id: str) -> Optional[dict]:
-        """
-        Returns the current learning item, or None if all items are facts.
-        Priority: 1) item with state='learning', 2) first item with state='not_reached'
-        """
+        """Returns the current learning item, or None if all items are learned."""
         conn = sqlite3.connect(self.agent_db_name)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        # First, check for an item already in 'learning' state
         learning_row = cur.execute(
             """
             SELECT id, item_name, state, learning_metric, threshold, current_sense_score
@@ -698,7 +337,6 @@ class SensiLLM(LLM):
             conn.close()
             return dict(learning_row)
 
-        # Otherwise, get the first 'not_reached' item
         not_reached_row = cur.execute(
             """
             SELECT id, item_name, state, learning_metric, threshold, current_sense_score
@@ -799,10 +437,7 @@ class SensiLLM(LLM):
         return {row["key"]: json.loads(row["value"]) for row in rows}
 
     def get_action_history(self, game_id: str, card_id: str, limit: int = 10) -> List[dict]:
-        """
-        Get the last N actions and their frame_diffs from the game table.
-        Returns a list of dicts with 'turn_id', 'action', and 'frame_diff'.
-        """
+        """Get the last N actions and their frame_diffs from the game table."""
         conn = sqlite3.connect(self.agent_db_name)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
@@ -820,7 +455,6 @@ class SensiLLM(LLM):
 
         conn.close()
 
-        # Reverse to get chronological order (oldest first)
         history = []
         for row in reversed(rows):
             frame_diff_parsed = None
@@ -837,43 +471,35 @@ class SensiLLM(LLM):
 
         return history
 
-    # ==================== End V2 Helper Methods ====================
+    # ==================== Frame Diff ====================
 
     def frame_diff_finder(self, current_frame: Image.Image, prev_frame: Image.Image) -> str:
-        """
-        Uses DSPy + an LLM to describe differences between two game frames.
-        Returns:
-            A JSON string describing the diff (see FrameDiffSignature).
-        """
-        # Wrap PIL images as dspy.Image (DSPy will handle encoding/base64 etc.)
+        """Uses DSPy + an LLM to describe differences between two game frames."""
         prev_img = None
         if prev_frame:
-            prev_img =  DSPyImage(url=encode_image(prev_frame))
+            prev_img = DSPyImage(url=encode_image(prev_frame))
         else:
             empty_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
             prev_img = DSPyImage(url=encode_image(empty_img))
 
         current_img = None
         if current_frame:
-            current_img =  DSPyImage(url=encode_image(current_frame))
+            current_img = DSPyImage(url=encode_image(current_frame))
         else:
             empty_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
             current_img = DSPyImage(url=encode_image(empty_img))
-
 
         try:
             prediction = self.frame_diff_module(
                 prev_frame=prev_img,
                 current_frame=current_img,
             )
-            # `prediction.diff_json` is already a string (ideally valid JSON).
             diff_json = getattr(prediction, "diff_json", None)
         except Exception as e:
             logger.warning(f"frame_diff_module failed with exception: {e}")
             diff_json = None
 
         if not diff_json or not diff_json.strip():
-            # Return default empty diff if model returns empty response
             logger.warning("frame_diff_finder returned empty response, using default")
             return json.dumps({
                 "added_objects": [],
@@ -892,15 +518,16 @@ class SensiLLM(LLM):
             result = result[:-3]
         return result.strip()
 
+    # ==================== Observation & Decision Persistence ====================
+
     def append_observation(self, card_id, game_id, turn_id, game_state,
-                        prev_frame_img, frame_diff, guesses, figured_out):
+                           prev_frame_img, frame_diff, guesses, figured_out):
         conn = sqlite3.connect(self.agent_db_name)
-        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         frame_diff_str = json.dumps(frame_diff)
 
-        # prev_frame as PNG bytes (BLOB)
         buf = io.BytesIO()
         prev_frame_bytes = None
         if prev_frame_img:
@@ -909,46 +536,32 @@ class SensiLLM(LLM):
 
         cur.execute(
             """
-            INSERT INTO game (card_id,
-                              game_id,
-                              turn_id,
-                              game_state,
-                              prev_frame,
-                              frame_diff)
-            VALUES (?, ?, ? ,? , ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
-            UPDATE SET 
+            INSERT INTO game (card_id, game_id, turn_id, game_state, prev_frame, frame_diff)
+            VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
+            UPDATE SET
                 game_state = excluded.game_state,
                 prev_frame = excluded.prev_frame,
-                frame_diff = excluded.frame_diff            
+                frame_diff = excluded.frame_diff
             """,
-            (
-                card_id,
-                game_id,
-                turn_id,
-                game_state,
-                prev_frame_bytes,
-                frame_diff_str,
-            ),
+            (card_id, game_id, turn_id, game_state, prev_frame_bytes, frame_diff_str),
         )
-
 
         gss_json = json.dumps(guesses)
         cur.execute(
             """
             INSERT INTO guesses (game_id, card_id, turn_id, gss)
-            VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+            VALUES (?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
             UPDATE SET
                 gss = excluded.gss
             """,
             (game_id, card_id, turn_id, gss_json),
         )
 
-
         figs_json = json.dumps(figured_out)
         cur.execute(
             """
             INSERT INTO figured_outs (game_id, card_id, turn_id, figs)
-            VALUES (?, ?, ?,?) ON CONFLICT(card_id, game_id, turn_id) DO
+            VALUES (?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
             UPDATE SET
                 figs = excluded.figs
             """,
@@ -959,30 +572,20 @@ class SensiLLM(LLM):
         conn.close()
 
     def append_decision(self, card_id, game_id, turn_id,
-                        prev_action, prev_decision_type ):
+                        prev_action, prev_decision_type):
         conn = sqlite3.connect(self.agent_db_name)
-        conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         cur.execute(
             """
-            INSERT INTO game (card_id,
-                              game_id,
-                              turn_id,
-                              prev_action,
-                              prev_decision_type)
+            INSERT INTO game (card_id, game_id, turn_id, prev_action, prev_decision_type)
             VALUES (?, ?, ?, ?, ?) ON CONFLICT(card_id, game_id, turn_id) DO
             UPDATE SET
                 prev_action = excluded.prev_action,
                 prev_decision_type = excluded.prev_decision_type
             """,
-            (
-                card_id,
-                game_id,
-                turn_id,
-                prev_action,
-                prev_decision_type,
-            ),
+            (card_id, game_id, turn_id, prev_action, prev_decision_type),
         )
 
         conn.commit()
@@ -999,18 +602,19 @@ class SensiLLM(LLM):
         if act_raw not in self.VALID_ACT:
             raise ValueError(f"Invalid action: {act_raw}")
 
-        # Map to Python enums
         decision = DecisionType[dt_raw]
         action = GameAction[act_raw]
         return {"decision_type": decision, "action": action, "raw": s}
 
+    # ==================== Main Action Loop ====================
+
     def choose_action(
             self, frames: list[FrameData], latest_frame: FrameData
     ) -> GameAction:
-        """Choose which action the Agent should take, fill in any arguments, and return it."""
-        action = GameAction.RESET  # default action if LLM doesnt call one
+        """Choose which action the Agent should take."""
+        action = GameAction.RESET
 
-        # ==================== 1. FIRST FRAME CHECK (existing) ====================
+        # ==================== 1. FIRST FRAME CHECK ====================
         current_frame = None
         if latest_frame.frame != []:
             figured_out = []
@@ -1034,23 +638,20 @@ class SensiLLM(LLM):
             figured_out = []
             guesses = []
             self.score_counter = self.frames[-1].score
-            # V2: Initialize default learning items for this game
             self.initialize_items_to_learn(self.game_id, self.card_id)
             self.append_observation(self.card_id, self.game_id, self.turn_id, self.frames[-1].state, current_frame, self.frame_diff, guesses, figured_out)
             self.append_decision(self.card_id, self.game_id, self.turn_id, GameAction.RESET.name, DecisionType.INFORMED.name)
-            return action  # the first run, start the game
+            return action
 
         logger.info("Sending to Assistant for action...")
 
-        # ==================== 3. STORE INPUTS (NEW) ====================
-        # Store key-value inputs for this turn
+        # ==================== 2. STORE INPUTS ====================
         self.store_input(self.game_id, self.card_id, self.turn_id, "game_state", self.frames[-1].state.name)
         self.store_input(self.game_id, self.card_id, self.turn_id, "prev_action", self.prev_action)
         self.store_input(self.game_id, self.card_id, self.turn_id, "prev_decision_type", self.prev_decision_type)
         self.store_input(self.game_id, self.card_id, self.turn_id, "frame_diff", self.frame_diff)
 
-        # ==================== 4. LEARNING EVALUATION (NEW) ====================
-        # Get the current item to learn
+        # ==================== 3. LEARNING EVALUATION ====================
         current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
         current_item_name = ""
         current_sense_score = 0
@@ -1060,12 +661,10 @@ class SensiLLM(LLM):
         if current_item is not None:
             current_item_name = current_item["item_name"]
 
-            # Mark as 'learning' if it was 'not_reached'
             if current_item["state"] == "not_reached":
                 self.update_item_state(current_item["id"], state="learning")
                 logger.info(f"Started learning item: {current_item_name}")
 
-            # Generate metric if missing
             if current_item["learning_metric"] is None:
                 logger.info(f"Generating learning metric for: {current_item_name}")
                 metric_gen = dspy.Predict(MetricGeneratorSignature)
@@ -1073,9 +672,7 @@ class SensiLLM(LLM):
                 learning_metric = getattr(metric_result, "learning_metric", "")
                 self.update_item_state(current_item["id"], metric=learning_metric)
                 logger.info(f"Generated metric: {learning_metric}")
-                # Don't score yet on this turn, proceed to Player1/2
             else:
-                # Has metric, evaluate sense score
                 logger.info(f"Evaluating sense score for: {current_item_name}")
                 inputs_dict = self.get_inputs(self.game_id, self.card_id, self.turn_id)
 
@@ -1085,32 +682,25 @@ class SensiLLM(LLM):
                     learning_metric=current_item["learning_metric"],
                     facts=facts,
                     figured_out=self.prev_figured_out,
-                    # inputs=inputs_dict,
                 )
 
                 current_sense_score = int(getattr(score_result, "sense_score", 0))
                 sense_reasoning = getattr(score_result, "reasoning", "")
                 self.update_item_state(current_item["id"], sense_score=current_sense_score)
-                # V2: Also store sense score per turn in inputs table for history
                 self.store_input(self.game_id, self.card_id, self.turn_id, "sense_score", current_sense_score)
                 self.store_input(self.game_id, self.card_id, self.turn_id, "sense_reasoning", sense_reasoning)
                 logger.info(f"Sense score for '{current_item_name}': {current_sense_score}/10 - {sense_reasoning}")
 
-                # Check if threshold is met
                 threshold = current_item["threshold"] or 8
                 if current_sense_score >= threshold:
-                    # Mark the learning item as COMPLETED (not fact) so we don't query it as a fact itself
                     self.update_item_state(current_item["id"], state="completed")
                     logger.info(f"Item '{current_item_name}' COMPLETED (score {current_sense_score} >= threshold {threshold})")
 
-                    # Transfer 'figured_out' items to be new FACTS for next rounds
                     new_facts_count = 0
                     if self.prev_figured_out:
                         conn = sqlite3.connect(self.agent_db_name)
                         cur = conn.cursor()
                         for fact in self.prev_figured_out:
-                            # Insert each figured_out string as a new FACT item
-                            # We use the fact string as item_name, and state='fact'
                             try:
                                 cur.execute(
                                     """
@@ -1126,11 +716,9 @@ class SensiLLM(LLM):
                         conn.close()
                     logger.info(f"Transferred {new_facts_count} figured_out items to facts.")
 
-                    # V2: Reset guesses and figured_out for the new learning item
                     self.prev_guesses = []
                     self.prev_figured_out = []
                     logger.info("Reset guesses and figured_out for new learning item")
-                    # Get next item to learn
                     facts = self.get_facts(self.game_id, self.card_id)
                     current_item = self.get_current_item_to_learn(self.game_id, self.card_id)
                     current_item_name = current_item["item_name"] if current_item else ""
@@ -1139,8 +727,7 @@ class SensiLLM(LLM):
         else:
             logger.info("All items learned! No current learning target.")
 
-        # ==================== 5. PLAYER 1 - OBSERVER (modified) ====================
-        # Fetch action history (last 10 actions and their frame_diffs)
+        # ==================== 4. PLAYER 1 - OBSERVER ====================
         action_history = self.get_action_history(self.game_id, self.card_id, limit=10)
 
         player1 = dspy.Predict(Player1)
@@ -1154,7 +741,6 @@ class SensiLLM(LLM):
             prev_guesses=self.prev_guesses,
             prev_figured_out=self.prev_figured_out,
             guidelines=Player1.PLAYER1_GUIDELINES,
-            # V2 new inputs
             facts=facts,
             current_item_to_learn=current_item_name,
             current_sense_score=current_sense_score,
@@ -1162,13 +748,8 @@ class SensiLLM(LLM):
             action_history=action_history,
         )
 
-        # V2: Append player1 output to previous lists (accumulate until item becomes fact)
         guesses = getattr(observations, "guesses", []) or []
         figured_out = getattr(observations, "figured_out", []) or []
-
-        # Append new items to previous lists, avoiding duplicates
-        # guesses = self.prev_guesses + [g for g in new_guesses if g not in self.prev_guesses]
-        # figured_out = self.prev_figured_out + [f for f in new_figured_out if f not in self.prev_figured_out]
 
         self.append_observation(
             card_id=self.card_id,
@@ -1181,7 +762,7 @@ class SensiLLM(LLM):
             figured_out=figured_out,
         )
 
-        # ==================== 6. PLAYER 2 - ACTOR (modified) ====================
+        # ==================== 5. PLAYER 2 - ACTOR ====================
         inputs_dict = self.get_inputs(self.game_id, self.card_id, self.turn_id)
 
         player2 = dspy.Predict(Player2)
@@ -1189,10 +770,8 @@ class SensiLLM(LLM):
             nextAction = player2(
                 guesses=guesses,
                 figured_out=figured_out,
-                # V2 new inputs
                 facts=facts,
                 current_item_to_learn=current_item_name,
-                # inputs=inputs_dict,
             )
 
             parsed = []
@@ -1204,7 +783,6 @@ class SensiLLM(LLM):
             self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["action"].name, parsed["decision_type"].name)
         except Exception as e:
             print(f"Player2 LLM error, falling back to previous action: {e}")
-            # Fallback to previous action when LLM response is empty/invalid
             prev_act = self.prev_action
             if isinstance(prev_act, str):
                 prev_act = GameAction[prev_act]
@@ -1217,7 +795,7 @@ class SensiLLM(LLM):
             print(f"\nFALLBACK: {parsed['decision_type']} {parsed['action']}")
             self.append_decision(self.card_id, self.game_id, self.turn_id, parsed["action"].name, parsed["decision_type"].name)
 
-        # ==================== 7. RETURN ACTION (existing) ====================
+        # ==================== 6. RETURN ACTION ====================
         action = parsed["action"]
         self.current_sequence.append(action.name)
         return action
@@ -1225,11 +803,11 @@ class SensiLLM(LLM):
     def cleanup(self, scorecard: Optional[Scorecard] = None) -> None:
         """Called after main loop is finished."""
         if self._cleanup:
-            self._cleanup = False  # only cleanup once per agent
+            self._cleanup = False
 
             if self.game_state == GameState.GAME_OVER:
                 conn = sqlite3.connect(self.agent_db_name)
-                conn.row_factory = sqlite3.Row  # so we can access row["column_name"]
+                conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
                 self.losing_sequences.append(self.current_sequence)
                 ls_json = json.dumps(self.losing_sequences)
@@ -1255,10 +833,14 @@ class SensiLLM(LLM):
                 )
 
             logger.info(
-                    f"Finishing: agent took {self.action_counter} actions, took {self.seconds} seconds ({self.fps} average fps)"
-                )
+                f"Finishing: agent took {self.action_counter} actions, took {self.seconds} seconds ({self.fps} average fps)"
+            )
             if hasattr(self, "_session"):
                 self._session.close()
+
+
+# ==================== DSPy Signatures ====================
+
 
 class FrameDiffSignature(dspy.Signature):
     """
@@ -1297,11 +879,12 @@ class FrameDiffSignature(dspy.Signature):
     - If something is unknown, use null or an empty list, but keep all keys.
     """
 
-    prev_frame: dspy.Image   = dspy.InputField(desc="Frame before the action.")
+    prev_frame: dspy.Image = dspy.InputField(desc="Frame before the action.")
     current_frame: dspy.Image = dspy.InputField(desc="Frame after the action.")
-    diff_json: str           = dspy.OutputField(
+    diff_json: str = dspy.OutputField(
         desc="A single JSON object (string) strictly following the schema above."
     )
+
 
 class FrameDiffModule(dspy.Module):
     def __init__(self):
@@ -1309,13 +892,8 @@ class FrameDiffModule(dspy.Module):
         self._predict = dspy.Predict(FrameDiffSignature)
 
     def forward(self, prev_frame: dspy.Image, current_frame: dspy.Image):
-        """
-        prev_frame & current_frame should be dspy.Image objects.
-        """
         return self._predict(prev_frame=prev_frame, current_frame=current_frame)
 
-
-# ==================== V2 DSPy Signatures ====================
 
 class MetricGeneratorSignature(dspy.Signature):
     """
@@ -1326,7 +904,6 @@ class MetricGeneratorSignature(dspy.Signature):
     - What observations would confirm understanding?
     - What test actions could validate the learning?
     - What patterns in game feedback would indicate mastery?
-
     """
 
     item_to_learn: str = dspy.InputField(
@@ -1362,9 +939,6 @@ class SenseScorerSignature(dspy.Signature):
     figured_out: List[str] = dspy.InputField(
         desc="Things Player1 has figured out through gameplay"
     )
-    # inputs: dict = dspy.InputField(
-    #     desc="Current game inputs (frame_summary, game_state, prev_action, etc.)"
-    # )
 
     sense_score: int = dspy.OutputField(
         desc="Score from 1-10 indicating learning progress."
@@ -1373,13 +947,6 @@ class SenseScorerSignature(dspy.Signature):
         desc="Brief explanation for the score"
     )
 
-
-# ==================== End V2 DSPy Signatures ====================
-
-
-class DecisionType(Enum):
-    GUESS = 0
-    INFORMED = 1
 
 class Player1(dspy.Signature):
     """Given the inputs, Return two lists: guesses and figured_out.
@@ -1404,7 +971,7 @@ class Player1(dspy.Signature):
     8. Score reason sense_reasoning: the reason of your score
     9. Facts: items your team has definitively learned and confirmed in previous runs
     10. Action history: the last 10 actions and their frame_diffs showing what each action caused
-    
+
 
     You, Player 1, populate the "guesses" list and "figured_out" list as below:
     1. Develop guesses about the items to learn by asking: "If this action made this change, then this action is what?" and write it in the "guesses" list.
@@ -1429,21 +996,21 @@ class Player1(dspy.Signature):
     You can only communicate with Player 2 through guesses list and the figured out list. The goal is to learn the item and get a good sense score. Player 2 tries to resolve your doubt (Player 1 doubt) about guesses by choosing actions that best help to move guesses to figured out about the item to learn.
 
     So help him with smart "guesses" and certain "figured_out" things. Be patient with the list. Player 2 only has one action at a time but you can play as many times as you want. You play action by action to figure out the game and then win it.
-            
+
     LIST MANAGEMENT RULES for figured out items and guesses:
     When outputting guesses and figured_out, you are EDITING the previous lists:
     - KEEP: Items still valid based on current observations
     - EDIT: Items that need wording updates (e.g., more specific after new info)
     - REMOVE: Items contradicted by evidence or no longer relevant
     - ADD: New items based on latest frame/action
-    - PROMOTE: Move confirmed guesses from guesses → figured_out
-    
+    - PROMOTE: Move confirmed guesses from guesses -> figured_out
+
     Do NOT start fresh each turn. Curate the existing lists.
 
     IMPORTANT: You have access to "facts" - these are items your team has definitively learned and confirmed through the learning system.
     Use the facts to inform your analysis, but focus your guesses and observations toward understanding the current item to learn.
     Your goal is to learn the item to learn by steering the Player 2 through maintaining the guesses and figured out lists
-    
+
     SENSE SCORE FEEDBACK:
     You receive a current_sense_score (1-10) and sense_reasoning explaining why the score was given.
     - Score 1-3: Very low understanding. Focus on basic exploration and generating diverse guesses.
@@ -1479,7 +1046,6 @@ class Player1(dspy.Signature):
     )
     guidelines = dspy.InputField()
 
-    # --- V2 New Inputs ---
     facts: List[str] = dspy.InputField(
         desc="Confirmed facts from items marked as learned through the learning system"
     )
@@ -1503,6 +1069,7 @@ class Player1(dspy.Signature):
     figured_out: List[str] = dspy.OutputField(
         desc="A Python list of figured-out statements. Updated figured_out list: preserved confirmations + promoted guesses + new discoveries."
     )
+
 
 class Player2(dspy.Signature):
     """ Given the input guesses and figured out items, provide an action to make sense of the current item to learn.
@@ -1546,16 +1113,12 @@ class Player2(dspy.Signature):
     guesses: List[str] = dspy.InputField()
     figured_out: List[str] = dspy.InputField()
 
-    # --- V2 New Inputs ---
     facts: List[str] = dspy.InputField(
         desc="Confirmed facts from items marked as learned through the learning system"
     )
     current_item_to_learn: str = dspy.InputField(
         desc="The specific item currently being learned - choose actions to make sense of this"
     )
-    # inputs: dict = dspy.InputField(
-    #     desc="Current game inputs (frame data, game state, prev_action, etc.)"
-    # )
 
     # --- Outputs ---
     decision_type = dspy.OutputField()

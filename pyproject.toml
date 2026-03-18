@@ -1,42 +1,26 @@
 [project]
-name = "arc-agi-3-agents"
+name = "sensi-llm"
 version = "0.1.0"
-description = "ARC-AGI-3-Agents"
-readme = "readme.md"
+description = "SensiLLM: A multimodal learning agent for ARC-AGI-3"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "tiktoken>=0.7", # tokenizer (token counting, chunking)
-    "orjson>=3.10", # faster JSON (logging/serialization)
     "dotenv>=0.9.9",
-    "langchain[openai]>=0.3.27",
-    "langgraph>=0.6.3",
-    "langgraph-checkpoint-sqlite>=2.0.11",
-    "numpy>=2.3.2",
-    "openai==1.72.0",
-    "pillow>=11.2.1",
-    "pydantic>=2.11.7",
-    "requests>=2.32.4",
-    "smolagents>=1.20.0",
-    "fastapi>=0.121.2",
-    "cachetools>=6.2.2",
-    "json-repair>=0.12",
-    "cloudpickle>=2.2",
-    "asyncer>=0.0.7",
     "dspy==2.5.32",
     "dspy-ai==2.5.32",
-    "litellm==1.51.0",
     "google-auth>=2.0.0",
     "google-cloud-aiplatform>=1.38.0",
     "google-genai>=0.3.0",
+    "litellm==1.51.0",
+    "pillow>=11.2.1",
+    "pydantic>=2.11.7",
+    "requests>=2.32.4",
 ]
 
 [dependency-groups]
 dev = [
     "mypy>=1.15.0",
-    "pre-commit>=4.2.0",
     "pytest>=8.4.1",
-    "pytest-asyncio>=1.0.0",
-    "requests-mock>=1.12.1",
     "ruff>=0.11.4",
 ]
 
@@ -46,7 +30,6 @@ disallow_untyped_defs = true
 exclude = [
     "tests",
 ]
-plugins = []
 
 [tool.ruff.lint]
 extend-select = ["I"]

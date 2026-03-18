@@ -15,7 +15,6 @@ from requests.cookies import RequestsCookieJar
 from .recorder import Recorder
 from .structs import FrameData, GameAction, GameState, Scorecard
 from .tracing import trace_agent_session
-import sqlite3
 
 
 logger = logging.getLogger()
