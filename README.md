@@ -1,7 +1,7 @@
 # Sensi: Learn One Thing at a Time
 **Curriculum-Based Test-Time Learning for LLM Game Agents**
 
-[![arXiv](https://img.shields.io/badge/arXiv-2603.xxxxx-b31b1b.svg)](https://arxiv.org/abs/2603.xxxxx)
+[![arXiv](https://img.shields.io/badge/arXiv-2603.17683-b31b1b.svg)](https://arxiv.org/abs/2603.17683)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
 [![DSPy](https://img.shields.io/badge/built_with-DSPy-orange.svg)](https://dspy.ai)
 
@@ -69,14 +69,14 @@ For the research journey from early intuitions to the final design, see [backgro
 
 **Sensi: Learn One Thing at a Time — Curriculum-Based Test-Time Learning for LLM Game Agents**
 Mohsen Arjmandi (CTO, evolutionID)
-arXiv preprint (submitted March 2026) — link live within 48 hours
+arXiv preprint, March 2026
 
 ```bibtex
 @misc{arjmandi2026sensi,
   title={Sensi: Learn One Thing at a Time — Curriculum-Based Test-Time Learning for LLM Game Agents},
   author={Mohsen Arjmandi},
   year={2026},
-  eprint={2603.xxxxx},
+  eprint={2603.17683},
   archivePrefix={arXiv},
   primaryClass={cs.AI}
 }
