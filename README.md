@@ -7,7 +7,7 @@
 
 **50–94× better sample efficiency on ARC-AGI-3** while openly diagnosing the exact failure mode.
 
-## 🎯 What is Sensi?
+## What is Sensi?
 
 Sensi is a neuro-symbolic LLM agent framework that forces the model to **learn one thing at a time** at test time — no retraining, no gradient updates.
 It turns the context window into a programmable database and uses an external state machine + dynamic LLM-as-judge to drive curriculum-style learning.
@@ -18,15 +18,13 @@ Two iterations:
 
 The paper turns the negative result into a clear contribution: the bottleneck has shifted from "learning efficiency" to "perceptual grounding" — and we show exactly where it breaks (self-consistent hallucination cascade).
 
-## ✨ Key Results & Contributions
-
-- 50–94× sample efficiency improvement on ARC-AGI-3
+## Key Results & Contributions
 - Novel **database-as-control-plane** pattern (entire cognitive state lives in SQLite → fully steerable)
 - Dynamic LLM-as-judge with generated rubrics + external state machine
 - Precise failure diagnosis + actionable next steps (hybrid pixel analysis)
 - Full DSPy implementation + reproducible logs
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
