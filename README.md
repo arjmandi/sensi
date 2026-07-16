@@ -87,7 +87,7 @@ arXiv preprint, March 2026
 - [x] Paper submitted to arXiv (cs.AI + cs.LG)
 - [x] Full code + Colab
 - [ ] v3 perception fix (hybrid programmatic + LLM diff) → expected +1–2 solves
-- [ ] Submit to NeurIPS 2026 Agentic AI / Test-Time Compute workshops
+
 
 ## 🔗 Connect
 
