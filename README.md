@@ -7,7 +7,7 @@
 
 **50–94× better sample efficiency on ARC-AGI-3** while openly diagnosing the exact failure mode.
 
-## What is Sensi?
+## 🎯 What is Sensi?
 
 Sensi is a neuro-symbolic LLM agent framework that forces the model to **learn one thing at a time** at test time — no retraining, no gradient updates.
 It turns the context window into a programmable database and uses an external state machine + dynamic LLM-as-judge to drive curriculum-style learning.
@@ -18,13 +18,15 @@ Two iterations:
 
 The paper turns the negative result into a clear contribution: the bottleneck has shifted from "learning efficiency" to "perceptual grounding" — and we show exactly where it breaks (self-consistent hallucination cascade).
 
-## Key Results & Contributions
+## ✨ Key Results & Contributions
+
+- 50–94× sample efficiency improvement on ARC-AGI-3
 - Novel **database-as-control-plane** pattern (entire cognitive state lives in SQLite → fully steerable)
 - Dynamic LLM-as-judge with generated rubrics + external state machine
 - Precise failure diagnosis + actionable next steps (hybrid pixel analysis)
 - Full DSPy implementation + reproducible logs
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -85,7 +87,15 @@ arXiv preprint, March 2026
 - [x] Paper submitted to arXiv (cs.AI + cs.LG)
 - [x] Full code + Colab
 - [ ] v3 perception fix (hybrid programmatic + LLM diff) → expected +1–2 solves
+- [ ] Submit to NeurIPS 2026 Agentic AI / Test-Time Compute workshops
 
+## ➡️ Next step: ARG (July 2026)
+
+Sensi's controlled experiments ended in two single-variable results that pointed past prompting entirely. **Binding loss:** a prose fact and its matching render content never joined across ~2,300 actions of a frozen mid-tier model — until one mechanical coordinate join flipped first-level completions from 0/200-action runs to 3/3 on an otherwise identical stack. **Commitment loss:** a run wrote the winning move verbatim twice and executed it zero times across 171 consecutive turns. Both capabilities existed in the model; neither survived the context. Rhetoric ("pay attention to X") restored neither.
+
+**[ARG — Aligned Referent Grounding](https://github.com/arjmandi/ARG)** is the successor built from those results: an architecture where the LLM *proposes* typed operations through closed vocabularies and admission gates, while a deterministic Executive owns every belief, plan, and achievement — nothing becomes knowledge without a pre-registered prediction matched against observation by code, and everything is append-only and replayable. The goal curriculum is *generated* from typed knowledge deficits starting at zero knowledge; plans compile down to single actions through machine-verified goal chains.
+
+Status there, stated the way that project states everything: the mechanism claims are validated under the system's own run-validity gates (the commitment-drift dissociation at protocol seed count; binding drift structurally absorbed into code; a small backbone running the full loop with a clean write path; generalization to unseen games), while the efficacy claim is open — zero level completions across 52 gated runs, pre-registered as a structural defeater rather than a caveat. The design, campaign record, instruments, tests, and proposal documents are all in the repo.
 
 ## 🔗 Connect
 
